@@ -1,0 +1,466 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "marimo",
+#     "tiled[server]",
+#     "pandas",
+#     "h5py",
+#     "numpy",
+#     "ruamel.yaml",
+#     "matplotlib",
+#     "torch",
+# ]
+# ///
+import marimo
+
+__generated_with = "0.19.2"
+app = marimo.App(width="medium")
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    # VDP Query-Based M(H) Dataset Demo
+
+    This demo shows how to **query a physics-based subset** of the catalog before loading data.
+
+    **Query:** Strong ferromagnetic (Ja > 0.5 meV) + easy-axis anisotropy (Dc < -0.5 meV)
+
+    | Mode | Pattern | Best For |
+    |------|---------|----------|
+    | **Mode A (Expert)** | `query_manifest()` → direct HDF5 | ML pipelines, bulk loading |
+    | **Mode B (Visualizer)** | `h["mh_powder_30T"][:]` | Interactive exploration, remote |
+
+    **Prerequisites:** Start the Tiled server:
+    ```bash
+    cd $PROJ_VDP/tiled_poc
+    uv run --with 'tiled[server]' tiled serve config config.yml --api-key secret
+    ```
+    """)
+    return
+
+
+@app.cell
+def _():
+    import marimo as mo
+    import numpy as np
+    import time
+    import sys
+    from pathlib import Path
+
+    # Add scripts directory to path
+    sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+
+    # Use config module for configuration
+    from config import get_tiled_url, get_api_key
+
+    TILED_URL = get_tiled_url()
+    API_KEY = get_api_key()
+    return API_KEY, TILED_URL, mo, np, time
+
+
+@app.cell
+def _(API_KEY, TILED_URL, mo):
+    # Connect to Tiled server
+    from tiled.client import from_uri
+    from tiled.queries import Key
+
+    client = from_uri(TILED_URL, api_key=API_KEY)
+
+    # Apply physics-based query: strong ferromagnetic + easy-axis anisotropy
+    subset = client.search(Key("Ja_meV") > 0.5).search(Key("Dc_meV") < -0.5)
+
+    mo.md(f"""**Connected to VDP server at `{TILED_URL}`.**
+
+    - Full catalog: **{len(client)}** Hamiltonians
+    - After query (`Ja > 0.5`, `Dc < -0.5`): **{len(subset)}** Hamiltonians
+    """)
+    return (subset,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Browse Hierarchical Structure
+
+    Each Hamiltonian is a **container** with:
+    - **Metadata**: Physics parameters + artifact paths
+    - **Children**: Artifacts accessible via Tiled adapters
+    """)
+    return
+
+
+@app.cell
+def _(mo, subset):
+    # Get first Hamiltonian container from the filtered subset
+    h_keys = list(subset.keys())[:5]
+    h_key = h_keys[0] if h_keys else None
+
+    if h_key:
+        h = subset[h_key]
+        children = list(h.keys())
+
+        # Physics parameters
+        physics_keys = ["Ja_meV", "Jb_meV", "Jc_meV", "Dc_meV", "spin_s", "g_factor"]
+        physics_rows = "\n".join([
+            f"| {k} | {h.metadata.get(k, 'N/A'):.4f} |"
+            if isinstance(h.metadata.get(k), float) else f"| {k} | {h.metadata.get(k, 'N/A')} |"
+            for k in physics_keys
+        ])
+
+        # Path keys (for Mode A)
+        path_keys = [k for k in h.metadata.keys() if k.startswith("path_")]
+
+        # Children table
+        child_rows = "\n".join([
+            f"| {ck} | `{h[ck].shape}` | `{h[ck].dtype}` |"
+            for ck in children[:6]
+        ])
+
+        _output = mo.md(f"""
+    ### Container: `{h_key}`
+
+    **Physics Parameters (Metadata):**
+
+    | Parameter | Value |
+    |-----------|-------|
+    {physics_rows}
+
+    **Artifact Paths (Mode A):** {len(path_keys)} paths available in metadata
+
+    **Children (Mode B):**
+
+    | Key | Shape | Dtype |
+    |-----|-------|-------|
+    {child_rows}
+    {"| ... | | |" if len(children) > 6 else ""}
+        """)
+    else:
+        h = None
+        children = []
+        physics_keys = []
+        path_keys = []
+        _output = mo.md("No Hamiltonians found. Run `register_catalog.py` first.")
+
+    _output
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Mode A: Expert Path-Based Access
+
+    **Best for:** ML pipelines, bulk loading, maximum performance
+
+    ```python
+    from query_manifest import build_mh_dataset
+
+    # Query Tiled -> get paths -> load directly from HDF5
+    X, h_grid, Theta, manifest = build_mh_dataset(subset, axis="powder", Hmax_T=30)
+    ```
+
+    **Tiled provides:** Queryable manifest with HDF5 paths
+    **You do:** Direct HDF5 loading (no HTTP overhead)
+    """)
+    return
+
+
+@app.cell
+def _(mo, subset, time):
+    from query_manifest import query_manifest, load_from_manifest, build_mh_dataset
+
+    # Step 1: Query manifest from the filtered subset
+    _t0 = time.perf_counter()
+    manifest = query_manifest(subset, axis="powder", Hmax_T=30)
+    query_time = (time.perf_counter() - _t0) * 1000
+
+    # Step 2: Load from HDF5
+    _t1 = time.perf_counter()
+    X_a, Theta_a = load_from_manifest(manifest)
+    load_time = (time.perf_counter() - _t1) * 1000
+
+    total_time_a = query_time + load_time
+
+    mo.md(f"""
+    ### Mode A Results
+
+    | Step | Time |
+    |------|------|
+    | Query manifest | {query_time:.1f} ms |
+    | Load from HDF5 | {load_time:.1f} ms |
+    | **Total** | **{total_time_a:.1f} ms** |
+
+    **Loaded:** {len(X_a)} curves, shape `{X_a.shape}`
+    """)
+    return Theta_a, X_a, manifest, total_time_a
+
+
+@app.cell
+def _(manifest):
+    manifest
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Mode B: Tiled Adapter Access
+
+    **Best for:** Interactive exploration, visualization, remote access
+
+    ```python
+    # Access arrays directly via Tiled
+    h = subset["H_636ce3e4"]
+    data = h["mh_powder_30T"][:]     # Full array
+    slice = h["ins_12meV"][100:200, 50:150]  # Partial read
+    ```
+
+    **Tiled provides:** Chunked array access via HTTP
+    **You get:** Remote access, slicing, no file management
+    """)
+    return
+
+
+@app.cell
+def _(mo, np, subset, time):
+    # Mode B: Load via Tiled adapters
+    def build_mh_dataset_mode_b(tiled_client, *, axis="powder", Hmax_T=30, clamp_H0=True):
+        """Build M(H) dataset using Tiled adapters (Mode B)."""
+        artifact_key = f"mh_{axis}_{int(Hmax_T)}T"
+
+        X_list = []
+        Theta_list = []
+
+        # Use .items() to iterate all items (not paginated like .keys())
+        for h_key, h in tiled_client.items():
+            if artifact_key not in h.keys():
+                continue
+
+            params = h.metadata
+            spin_s = params.get("spin_s", 2.5)
+            g_factor = params.get("g_factor", 2.0)
+            Msat = g_factor * spin_s
+
+            # Load via Tiled adapter (HTTP)
+            M = h[artifact_key][:]
+
+            if clamp_H0:
+                M = M.copy()
+                M[0] = 0.0
+
+            X_list.append(M / Msat)
+            Theta_list.append([
+                params["Ja_meV"], params["Jb_meV"],
+                params["Jc_meV"], params["Dc_meV"],
+                spin_s, g_factor,
+            ])
+
+        if not X_list:
+            raise ValueError(f"No curves found for axis={axis}, Hmax_T={Hmax_T}")
+
+        X = np.stack(X_list, dtype=np.float32)
+        Theta = np.array(Theta_list, dtype=np.float32)
+        h_grid = np.linspace(0, 1, X.shape[1], dtype=np.float32)
+
+        return X, h_grid, Theta
+
+    _t0 = time.perf_counter()
+    X_b, h_grid, Theta_b = build_mh_dataset_mode_b(subset, axis="powder", Hmax_T=30)
+    total_time_b = (time.perf_counter() - _t0) * 1000
+
+    mo.md(f"""
+    ### Mode B Results
+
+    | Metric | Value |
+    |--------|-------|
+    | **Total time** | **{total_time_b:.1f} ms** |
+    | Curves loaded | {len(X_b)} |
+    | Shape | `{X_b.shape}` |
+    """)
+    return (total_time_b,)
+
+
+@app.cell(hide_code=True)
+def _(mo, total_time_a, total_time_b):
+    ratio = total_time_a / total_time_b if total_time_b > 0 else 0
+
+    mo.md(f"""
+    ## Performance Comparison
+
+    | Mode | Time | Use Case |
+    |------|------|----------|
+    | **Mode A (Expert)** | {total_time_a:.1f} ms | ML training, bulk loading |
+    | **Mode B (Visualizer)** | {total_time_b:.1f} ms | Interactive exploration |
+
+    **Ratio:** Mode A / Mode B = {ratio:.2f}x
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## PyTorch DataLoader Integration
+
+    Wrap VDP in a PyTorch Dataset for ML training:
+
+    ```python
+    dataset = VDPDataset(subset, artifact_key="mh_powder_30T")
+    dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
+
+    for batch_data, batch_params in dataloader:
+        predictions = model(batch_data)
+        loss = criterion(predictions, batch_params)
+    ```
+    """)
+    return
+
+
+@app.cell
+def _(np):
+    import torch
+    from torch.utils.data import Dataset, DataLoader
+
+    class VDPDataset(Dataset):
+        """PyTorch Dataset using VDP hierarchical catalog."""
+
+        def __init__(self, tiled_client, artifact_key="mh_powder_30T"):
+            self.client = tiled_client
+            self.artifact_key = artifact_key
+            # Cache keys that have the requested artifact
+            self.h_keys = [
+                k for k, h in tiled_client.items()
+                if artifact_key in h.keys()
+            ]
+
+        def __len__(self):
+            return len(self.h_keys)
+
+        def __getitem__(self, idx):
+            h_key = self.h_keys[idx]
+            h = self.client[h_key]
+
+            # Load via Tiled adapter
+            data = h[self.artifact_key][:]
+
+            # Physics params from container metadata
+            params = h.metadata
+            param_tensor = torch.tensor([
+                params.get("Ja_meV", 0.0) or 0.0,
+                params.get("Jb_meV", 0.0) or 0.0,
+                params.get("Jc_meV", 0.0) or 0.0,
+                params.get("Dc_meV", 0.0) or 0.0,
+            ], dtype=torch.float32)
+
+            data_tensor = torch.from_numpy(data.astype(np.float32))
+            return data_tensor, param_tensor
+    return DataLoader, VDPDataset
+
+
+@app.cell
+def _(DataLoader, VDPDataset, mo, subset, time):
+    # Create dataset and dataloader from the filtered subset
+    dataset = VDPDataset(subset, artifact_key="mh_powder_30T")
+    dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
+
+    # Load first batch
+    start = time.perf_counter()
+    batch_data, batch_params = next(iter(dataloader))
+    load_time_dl = (time.perf_counter() - start) * 1000
+
+    mo.md(f"""
+    ### DataLoader Demo
+
+    **Dataset size:** {len(dataset)} Hamiltonians with `mh_powder_30T`
+    **Batch size:** 4
+
+    **First batch loaded in {load_time_dl:.1f} ms:**
+    - Data shape: `{tuple(batch_data.shape)}` (batch, 200 field points)
+    - Params shape: `{tuple(batch_params.shape)}` (batch, 4 params: Ja, Jb, Jc, Dc)
+
+    **Sample parameters (Ja, Jb, Jc, Dc):**
+    - Sample 0: `[{batch_params[0, 0]:.3f}, {batch_params[0, 1]:.3f}, {batch_params[0, 2]:.3f}, {batch_params[0, 3]:.3f}]`
+    - Sample 1: `[{batch_params[1, 0]:.3f}, {batch_params[1, 1]:.3f}, {batch_params[1, 2]:.3f}, {batch_params[1, 3]:.3f}]`
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Visualize M(H) Curves
+
+    Plot sample magnetization curves colored by physics parameters.
+    """)
+    return
+
+
+@app.cell
+def _(Theta_a, X_a, mo, np):
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+    # Plot 1: Sample curves colored by Ja
+    ax1 = axes[0]
+    n_samples = min(10, len(X_a))
+    h_grid_plot = np.linspace(0, 1, X_a.shape[1])
+    colors = plt.cm.coolwarm(np.linspace(0, 1, n_samples))
+
+    for i in range(n_samples):
+        ax1.plot(h_grid_plot, X_a[i], color=colors[i], alpha=0.8,
+                 label=f"Ja={Theta_a[i, 0]:.2f}")
+    ax1.set_xlabel("Reduced field h = H/Hmax")
+    ax1.set_ylabel("Normalized magnetization m = M/(g*s)")
+    ax1.set_title("M(H) Curves (colored by Ja_meV)")
+    ax1.legend(fontsize=8, loc="lower right")
+    ax1.grid(True, alpha=0.3)
+
+    # Plot 2: Parameter distribution
+    ax2 = axes[1]
+    sc = ax2.scatter(Theta_a[:, 0], Theta_a[:, 3], c=Theta_a[:, 1], cmap="viridis", alpha=0.7)
+    ax2.set_xlabel("Ja_meV")
+    ax2.set_ylabel("Dc_meV")
+    ax2.set_title("Parameter Space (color = Jb_meV)")
+    ax2.grid(True, alpha=0.3)
+    plt.colorbar(sc, ax=ax2, label="Jb_meV")
+
+    plt.tight_layout()
+    mo.md("### M(H) Visualization")
+    return (fig,)
+
+
+@app.cell
+def _(fig):
+    fig
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Summary
+
+    **This demo shows query-based data loading:**
+
+    1. **Server-side filtering** - Query filters BEFORE data transfer
+    2. **Physics-motivated queries** - Select materials by exchange coupling and anisotropy
+    3. **Same access patterns** - Mode A and Mode B work identically on filtered subsets
+
+    ```python
+    # Full catalog
+    client = from_uri(TILED_URL, api_key=API_KEY)
+
+    # Apply physics query
+    subset = client.search(Key("Ja_meV") > 0.5).search(Key("Dc_meV") < -0.5)
+
+    # Load from filtered subset
+    X, h_grid, Theta, manifest = build_mh_dataset(subset, axis="powder", Hmax_T=30)
+    ```
+    """)
+    return
+
+
+if __name__ == "__main__":
+    app.run()

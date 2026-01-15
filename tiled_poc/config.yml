@@ -1,0 +1,38 @@
+# Tiled server configuration
+uvicorn:
+  host: "127.0.0.1"
+  port: 8005
+
+trees:
+  - path: /
+    tree: catalog
+    args:
+      uri: "sqlite:////sdf/data/lcls/ds/prj/prjmaiqmag01/results/cwang31/proj-vdp/tiled_poc/catalog-bulk.db"
+      init_if_not_exists: true
+      writable_storage: "/sdf/data/lcls/ds/prj/prjmaiqmag01/results/cwang31/proj-vdp/tiled_poc/storage"
+      readable_storage:
+        - "/sdf/data/lcls/ds/prj/prjmaiqmag01/results/vdp/data/schema_v1"
+
+# VDP application config (used by Python scripts)
+vdp:
+  # Service directory (where catalog.db and storage/ live)
+  service_dir: "/sdf/data/lcls/ds/prj/prjmaiqmag01/results/cwang31/proj-vdp/tiled_poc"
+
+  # VDP data directory
+  data_dir: "/sdf/data/lcls/ds/prj/prjmaiqmag01/results/vdp"
+  schema_version: "schema_v1"
+
+  # HDF5 dataset paths by artifact type
+  dataset_paths:
+    mh_curve: "/curve/M_parallel"
+    gs_state: "/gs/spin_dir"
+    ins_powder: "/ins/broadened"
+
+  # Default array shapes by artifact type
+  default_shapes:
+    mh_curve: [200]
+    gs_state: [3, 8]
+    ins_powder: [600, 400]
+
+  # Registration defaults (override with VDP_MAX_HAMILTONIANS env var)
+  max_hamiltonians: 10
