@@ -73,7 +73,14 @@ def _():
 
     TILED_URL = get_tiled_url()
     API_KEY = get_api_key()
-    return API_KEY, TILED_URL, mo, np, time
+
+    # Demo configuration constants
+    N_CURVES_VISUALIZE = 10    # Number of curves to show in plots
+    BATCH_SIZE = 4             # PyTorch DataLoader batch size
+    HMAX_T = 30                # Default max field (Tesla)
+    AXIS = "powder"            # Default axis for M(H) curves
+
+    return API_KEY, AXIS, BATCH_SIZE, HMAX_T, N_CURVES_VISUALIZE, TILED_URL, mo, np, time
 
 
 @app.cell
@@ -205,12 +212,12 @@ def _(mo):
 
 
 @app.cell
-def _(mo, subset, time):
+def _(AXIS, HMAX_T, mo, subset, time):
     from query_manifest import query_manifest, load_from_manifest, build_mh_dataset
 
     # Step 1: Query manifest from the filtered subset
     _t0 = time.perf_counter()
-    manifest = query_manifest(subset, axis="powder", Hmax_T=30)
+    manifest = query_manifest(subset, axis=AXIS, Hmax_T=HMAX_T)
     query_time = (time.perf_counter() - _t0) * 1000
 
     # Step 2: Load from HDF5
@@ -261,7 +268,7 @@ def _(mo):
 
 
 @app.cell
-def _(mo, np, subset, time):
+def _(AXIS, HMAX_T, mo, np, subset, time):
     # Mode B: Load via Tiled adapters
     def build_mh_dataset_mode_b(tiled_client, *, axis="powder", Hmax_T=30, clamp_H0=True):
         """Build M(H) dataset using Tiled adapters (Mode B)."""
@@ -304,7 +311,7 @@ def _(mo, np, subset, time):
         return X, h_grid, Theta
 
     _t0 = time.perf_counter()
-    X_b, h_grid, Theta_b = build_mh_dataset_mode_b(subset, axis="powder", Hmax_T=30)
+    X_b, h_grid, Theta_b = build_mh_dataset_mode_b(subset, axis=AXIS, Hmax_T=HMAX_T)
     total_time_b = (time.perf_counter() - _t0) * 1000
 
     mo.md(f"""
@@ -446,10 +453,11 @@ def _(np):
 
 
 @app.cell
-def _(DataLoader, VDPDataset, mo, subset, time):
+def _(AXIS, BATCH_SIZE, DataLoader, HMAX_T, VDPDataset, mo, subset, time):
     # Create dataset and dataloader from the filtered subset
-    dataset = VDPDataset(subset, artifact_key="mh_powder_30T")
-    dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
+    artifact_key = f"mh_{AXIS}_{HMAX_T}T"
+    dataset = VDPDataset(subset, artifact_key=artifact_key)
+    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
     # Load first batch
     start = time.perf_counter()
@@ -459,8 +467,8 @@ def _(DataLoader, VDPDataset, mo, subset, time):
     mo.md(f"""
     ### DataLoader Demo
 
-    **Dataset size:** {len(dataset)} Hamiltonians with `mh_powder_30T`
-    **Batch size:** 4
+    **Dataset size:** {len(dataset)} Hamiltonians with `{artifact_key}`
+    **Batch size:** {BATCH_SIZE}
 
     **First batch loaded in {load_time_dl:.1f} ms:**
     - Data shape: `{tuple(batch_data.shape)}` (batch, 200 field points)
@@ -494,14 +502,14 @@ def _(mo):
 
 
 @app.cell
-def _(Theta_a, X_a, mo, np):
+def _(N_CURVES_VISUALIZE, Theta_a, X_a, mo, np):
     import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 
     # Plot 1: Sample curves colored by Ja
     ax1 = axes[0]
-    n_samples = min(10, len(X_a))
+    n_samples = min(N_CURVES_VISUALIZE, len(X_a))
     h_grid_plot = np.linspace(0, 1, X_a.shape[1])
     colors = plt.cm.coolwarm(np.linspace(0, 1, n_samples))
 

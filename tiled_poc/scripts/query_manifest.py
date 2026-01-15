@@ -18,7 +18,8 @@ use the Tiled adapter pattern instead (h["mh_powder_30T"][:]).
 This module provides:
 - query_manifest(): Query Tiled, returns DataFrame with paths + physics params
 - load_from_manifest(): Load data directly from HDF5 (no Tiled)
-- build_mh_dataset(): Convenience wrapper matching Julia API
+- build_mh_dataset(): Convenience wrapper for M(H) curves (matching Julia API)
+- build_ins_dataset(): Convenience wrapper for INS spectra
 
 Usage:
     from tiled.client import from_uri
@@ -229,6 +230,39 @@ def build_mh_dataset(client, *, axis="powder", Hmax_T=30, clamp_H0=True, **filte
     h_grid = np.linspace(0, 1, X.shape[1], dtype=np.float32)
 
     return X, h_grid, Theta, manifest
+
+
+def build_ins_dataset(client, *, Ei_meV=12, **filters):
+    """
+    Build INS dataset - convenience wrapper for INS spectra.
+
+    Args:
+        client: Tiled client
+        Ei_meV: Incident energy (12 or 25)
+        **filters: Physics filters (Ja_min, Ja_max, Jb_min, Jb_max, etc.)
+
+    Returns:
+        spectra: (n_samples, nq, nw) INS spectra array
+        Theta: (n_samples, 6) parameters [Ja, Jb, Jc, Dc, spin_s, g_factor]
+        manifest: DataFrame with metadata
+
+    Example:
+        # Load all INS spectra at Ei=12 meV
+        spectra, Theta, manifest = build_ins_dataset(client, Ei_meV=12)
+
+        # Load only ferromagnetic (Ja > 0)
+        spectra, Theta, manifest = build_ins_dataset(client, Ei_meV=12, Ja_min=0)
+    """
+    manifest = query_manifest(
+        client, artifact_type="ins_powder", Ei_meV=Ei_meV, **filters
+    )
+
+    if manifest.empty:
+        raise ValueError(f"No INS spectra found for Ei_meV={Ei_meV}")
+
+    spectra, Theta = load_from_manifest(manifest, artifact_type="ins_powder")
+
+    return spectra, Theta, manifest
 
 
 def main():
