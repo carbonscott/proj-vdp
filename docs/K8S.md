@@ -13,4 +13,7 @@ kubectl config set-context --current --namespace=tiled-dev
 
 # Retrieve the Tiled API key secret
 kubectl get secret tiled-api-key-6hhc25f4mk -o yaml
+
+# Decode the base64 secret
+echo "XXXXX" | base64 -d
 ```
