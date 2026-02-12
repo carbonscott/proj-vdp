@@ -1,0 +1,55 @@
+# Tiled server configuration
+uvicorn:
+  host: "127.0.0.1"
+  port: 8005
+
+trees:
+  - path: /
+    tree: catalog
+    args:
+      uri: "sqlite:////sdf/data/lcls/ds/prj/prjmaiqmag01/results/cfitussi/proj-vdp/tiled_poc/catalog-bulk.db"
+      init_if_not_exists: true
+      writable_storage: "/sdf/data/lcls/ds/prj/prjmaiqmag01/results/cfitussi/proj-vdp/tiled_poc/storage"
+      readable_storage:
+        - "/sdf/data/lcls/ds/prj/prjmaiqmag01/results/cfitussi/proj-vdp/data"
+
+        
+#MODIF FOR THE SLICER
+#media_types:
+  #application/x-sliced-hdf5:
+    #adapter: "slicer:SlicedHDF5Adapter" #to transform the 3D array in a list of 2D array per hamiltonian
+
+
+authentication:
+  allow_anonymous_access: true
+
+# VDP application config (used by Python scripts)
+vdp:
+  # Service directory (where catalog.db and storage/ live)
+  service_dir: "/sdf/data/lcls/ds/prj/prjmaiqmag01/results/cfitussi/proj-vdp/tiled_poc"
+
+  # VDP data directory
+  data_dir: "/sdf/data/lcls/ds/prj/prjmaiqmag01/results/cfitussi/proj-vdp/data"
+  schema_version: "schema_v1"
+
+ # Schema V2
+  dataset_paths:
+    rixs: "/RIXS"
+    xps: "/XPS"
+    rixs_energy_in: "/ein_RIXS"
+    rixs_energy_loss: "/eloss_RIXS"
+    xps_energy: "/w_xps"
+
+
+
+
+  # Default array shapes by artifact type
+  default_shapes:
+    rixs: [3125, 151, 40] # do I need to put 3125?
+    xps: [3125, 5000] #same question here 
+    rixs_energy_in: [40]
+    rixs_energy_loss: [151]
+    xps_energy: [5000]
+
+ # Registration defaults (override with VDP_MAX_HAMILTONIANS env var)
+  #max_hamiltonians: 10
