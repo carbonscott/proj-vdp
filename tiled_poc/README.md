@@ -1,368 +1,372 @@
-# VDP Hierarchical Tiled Catalog
+# Generic Tiled Broker
 
-This implementation provides **two access modes** for VDP data:
-- **Mode A (Expert):** Query metadata → get HDF5 paths → load directly with h5py
-- **Mode B (Visualizer):** Access arrays as Tiled children via HTTP adapters
+A config-driven system for registering scientific HDF5 datasets into a
+[Tiled](https://blueskyproject.io/tiled/) catalog and retrieving them via two
+access modes:
 
-## Quick Start
+- **Mode A (Expert):** Query metadata for HDF5 paths, load directly with `h5py` -- fast, ideal for ML pipelines.
+- **Mode B (Visualizer):** Access arrays as Tiled children via HTTP -- chunked, interactive.
 
-### Step 1: Set Environment Variables
+The broker is **dataset-agnostic**. The Parquet manifest is the contract: no
+parameter names, artifact types, or file layouts are hardcoded.
+
+---
+
+## Prerequisites
+
+- Python >= 3.11
+- [`uv`](https://docs.astral.sh/uv/) (manages dependencies inline -- no install step)
+
+Set the cache directory so `uv` doesn't re-download packages every run:
 
 ```bash
-export PROJ_VDP=/sdf/data/lcls/ds/prj/prjmaiqmag01/results/cwang31/proj-vdp
-export VDP_DATA=/sdf/data/lcls/ds/prj/prjmaiqmag01/results/vdp
 export UV_CACHE_DIR=/sdf/data/lcls/ds/prj/prjmaiqmag01/results/cwang31/.UV_CACHE
 ```
 
-### Step 2: Start the Tiled Server FIRST
-
-**Important:** The registration script connects to the server via HTTP API. The server must be running before registration.
-
-```bash
-cd $PROJ_VDP/tiled_poc
-
-# Start server (creates empty catalog.db if not exists)
-uv run --with 'tiled[server]' tiled serve config config.yml --api-key secret
-```
-
-The server runs on **port 8005** (configured in `config.yml`).
-
-**To verify the server is running:**
-```bash
-lsof -i :8005 | grep LISTEN
-# Or
-curl -s http://localhost:8005/api/v1 | head
-```
-
-### Step 3: Run Data Registration (in another terminal)
+For convenience, define a variable with the common dependencies used across
+commands:
 
 ```bash
-cd $PROJ_VDP/tiled_poc
-
-# Register 10 Hamiltonians (default)
-uv run --with 'tiled[server]' --with pandas --with pyarrow --with h5py --with 'ruamel.yaml' \
-  python scripts/register_catalog.py
-
-# Register more Hamiltonians (e.g., all 10,000)
-VDP_MAX_HAMILTONIANS=10000 uv run --with 'tiled[server]' --with pandas --with pyarrow --with h5py --with 'ruamel.yaml' \
-  python scripts/register_catalog.py
-```
-
-## Full Registration (All 10,000 Hamiltonians)
-
-For a fresh full registration:
-
-```bash
-cd $PROJ_VDP/tiled_poc
-
-# 1. Stop any running server on port 8005
-lsof -ti :8005 | xargs kill 2>/dev/null || true
-
-# 2. Remove old database (optional - backup first if needed)
-mv catalog.db catalog.db.bak 2>/dev/null || true
-
-# 3. Start fresh server (creates new catalog.db)
-uv run --with 'tiled[server]' tiled serve config config.yml --api-key secret &
-sleep 5  # Wait for server to start
-
-# 4. Run full registration
-VDP_MAX_HAMILTONIANS=10000 uv run --with 'tiled[server]' --with pandas --with pyarrow --with h5py --with 'ruamel.yaml' \
-  python scripts/register_catalog.py
+UV_DEPS="--with 'tiled[server]' --with pandas --with pyarrow --with h5py --with 'ruamel.yaml' --with canonicaljson"
 ```
 
 ---
 
-## Bulk Registration (Fast Alternative)
+## Quickstart (Demo Walkthrough)
 
-For maximum speed on large datasets, use `bulk_register.py` which bypasses the HTTP layer and writes directly to SQLite.
+The `demo/` directory contains a self-contained example with three datasets
+(VDP, EDRIXS, Multimodal). This walkthrough goes from raw HDF5 files to
+querying data in Python.
 
-### When to Use Bulk Registration
+### Step 1: Generate Manifests
 
-| Use Case | Script | Speed |
-|----------|--------|-------|
-| Incremental updates | `scripts/register_catalog.py` | ~5 nodes/sec |
-| Fresh bulk load (1K+) | `scripts/bulk_register.py` | ~2,250 nodes/sec |
-
-### How It Works
-
-`bulk_register.py` uses direct SQLAlchemy with a trigger disable/rebuild pattern:
-1. Disables the closure table trigger
-2. Bulk inserts all nodes in a single transaction
-3. Rebuilds the closure table with set-based SQL
-4. Re-enables the trigger for future incremental updates
-
-### Running Bulk Registration
-
-**No server needed** - the script accesses the database directly.
-
-#### CLI Options
-
-```
-python scripts/bulk_register.py [OPTIONS]
-
-Options:
-  -n, --max-hamiltonians NUM   Number of Hamiltonians to register (default: 10)
-  -o, --output DB_NAME         Output database filename (default: catalog.db)
-  --force                      Overwrite existing database without prompting
-  -h, --help                   Show help message
-```
-
-#### Examples
+Manifest generators in `extra/` scan HDF5 source data and produce Parquet
+manifests. Each dataset has a YAML config in `demo/datasets/`:
 
 ```bash
-cd $PROJ_VDP/tiled_poc
+cd demo
 
-# Show help
-uv run --with 'tiled[server]' --with pandas --with pyarrow --with h5py \
-  --with canonicaljson --with 'ruamel.yaml' \
-  python scripts/bulk_register.py --help
-
-# Bulk register 10 Hamiltonians (default)
-uv run --with 'tiled[server]' --with pandas --with pyarrow --with h5py \
-  --with canonicaljson --with 'ruamel.yaml' \
-  python scripts/bulk_register.py
-
-# Bulk register 1000 Hamiltonians
-uv run --with 'tiled[server]' --with pandas --with pyarrow --with h5py \
-  --with canonicaljson --with 'ruamel.yaml' \
-  python scripts/bulk_register.py -n 1000
-
-# Bulk register all 10,000 Hamiltonians to a specific database (~53 seconds)
-uv run --with 'tiled[server]' --with pandas --with pyarrow --with h5py \
-  --with canonicaljson --with 'ruamel.yaml' \
-  python scripts/bulk_register.py -n 10000 -o catalog-bulk.db
+# Generate manifests for VDP and EDRIXS (10 Hamiltonians each)
+uv run $UV_DEPS python ../generate.py datasets/vdp.yml datasets/edrixs.yml -n 10
 ```
 
-Environment variables `VDP_MAX_HAMILTONIANS` and `CATALOG_DB` still work as fallbacks for backwards compatibility.
+This creates:
+```
+demo/manifests/
+  vdp_hamiltonians.parquet
+  vdp_artifacts.parquet
+  edrixs_hamiltonians.parquet
+  edrixs_artifacts.parquet
+```
 
-### Performance Comparison
+### Step 2: Ingest into Catalog
 
-| Dataset | HTTP Registration | Bulk Registration | Speedup |
-|---------|-------------------|-------------------|---------|
-| 10 Hamiltonians | ~2 sec | 0.1 sec | 20x |
-| 1,000 Hamiltonians | ~3.3 min | 5 sec | 40x |
-| 10,000 Hamiltonians | ~90 min | 53 sec | **100x** |
-
-### After Bulk Registration
-
-Start the server to query the catalog:
+`ingest.py` bulk-loads manifests into a SQLite catalog database using direct
+SQLAlchemy (no running server needed).
 
 ```bash
+# Still in demo/
+uv run $UV_DEPS python ../ingest.py datasets/vdp.yml datasets/edrixs.yml
+```
+
+This creates `demo/catalog.db` with all Hamiltonians and their artifacts.
+
+### Step 3: Start the Tiled Server
+
+```bash
+# Still in demo/
 uv run --with 'tiled[server]' tiled serve config config.yml --api-key secret
 ```
 
-**Note:** `bulk_register.py` creates a fresh database. If you have existing data, back it up first.
+The demo server runs on **port 8006** (production uses 8005).
+
+### Step 4: Retrieve Data
+
+Open a new terminal (keep the server running) and start Python:
+
+```bash
+cd demo
+uv run $UV_DEPS python
+```
+
+**Mode B -- Array access via Tiled (simplest):**
+
+```python
+from tiled.client import from_uri
+
+client = from_uri("http://localhost:8006", api_key="secret")
+
+# List Hamiltonians
+print(list(client)[:5])
+# ['H_636ce3e4', 'H_7a1b2c3d', ...]
+
+# Pick one, list its children
+h = client[list(client)[0]]
+print(list(h))
+# ['mh_powder_30T', 'gs_state', 'ins_12meV']
+
+# Read an array
+curve = h["mh_powder_30T"][:]
+print(curve.shape)  # (200,)
+```
+
+**Mode A -- Expert path-based access (fast, for ML pipelines):**
+
+```python
+import h5py
+
+h = client[list(client)[0]]
+
+# Metadata contains HDF5 locators
+rel_path = h.metadata["path_mh_powder_30T"]
+dataset  = h.metadata["dataset_mh_powder_30T"]
+
+# Load directly from HDF5
+base_dir = "/sdf/data/lcls/ds/prj/prjmaiqmag01/results/vdp/data/schema_v1"
+with h5py.File(f"{base_dir}/{rel_path}") as f:
+    curve = f[dataset][:]
+```
+
+### Step 5: Interactive Exploration (Optional)
+
+```bash
+cd demo
+uv run $UV_DEPS --with marimo --with matplotlib \
+  marimo edit explore.py
+```
 
 ---
 
-## Common Issues
+## Workflow Overview
 
-### "Server error 500" during registration
-**Cause:** Database missing or corrupted while server is running.
-**Fix:** Stop server, remove `catalog.db`, restart server (it will create a fresh database).
+The three CLI scripts form a pipeline:
 
-### "Server not running" error
-**Fix:** Start the server first (Step 2), then run registration.
-
-### Port 8005 already in use
-**Fix:**
-```bash
-# Find and kill existing process
-lsof -ti :8005 | xargs kill
 ```
+generate.py          ingest.py             tiled serve
+  (manifests)   --->   (catalog.db)   --->   (HTTP API)
+                       [offline bulk]        [serve queries]
+
+                     register.py
+                       [online HTTP]  --->   (running server)
+```
+
+| Script | Purpose | Server needed? |
+|--------|---------|----------------|
+| `generate.py` | Scan HDF5 data, produce Parquet manifests | No |
+| `ingest.py` | Bulk-load manifests into `catalog.db` (SQLAlchemy) | No |
+| `register.py` | Register manifests into a running server (HTTP) | Yes |
+
+**When to use which registration method:**
+
+| Scenario | Use | Speed |
+|----------|-----|-------|
+| Initial load of 1K+ Hamiltonians | `ingest.py` | ~2,250 nodes/sec |
+| Incremental updates to a live server | `register.py` | ~5 nodes/sec |
+
+---
+
+## HTTP Registration (Incremental)
+
+`register.py` registers data into a **running** Tiled server. It is
+incremental: Hamiltonians that already exist (by key) are skipped.
+
+```bash
+cd demo
+
+# Register EDRIXS into the already-running server
+uv run $UV_DEPS python ../register.py datasets/edrixs.yml
+
+# Limit to 5 Hamiltonians
+uv run $UV_DEPS python ../register.py datasets/edrixs.yml -n 5
+
+# Register multiple datasets at once
+uv run $UV_DEPS python ../register.py datasets/vdp.yml datasets/edrixs.yml
+```
+
+---
+
+## Adding Your Own Dataset
+
+Three things are needed:
+
+### 1. Dataset Config (`datasets/mydata.yml`)
+
+```yaml
+label: MyData
+generator: gen_mydata_manifest
+base_dir: /path/to/hdf5/root
+```
+
+- `label` -- Human-readable name (for logging).
+- `generator` -- Python module name in `extra/` that generates manifests.
+- `base_dir` -- Root directory. All HDF5 `file` paths in the manifest are
+  relative to this.
+
+### 2. Manifest Generator (`extra/gen_mydata_manifest.py`)
+
+Must expose one function:
+
+```python
+def generate(output_dir, n_hamiltonians=10):
+    """
+    Returns:
+        (ham_df, art_df): Two DataFrames written as Parquet.
+    """
+```
+
+**Hamiltonian DataFrame** -- one row per Hamiltonian:
+
+| Column | Required | Description |
+|--------|----------|-------------|
+| `huid` | Yes | Unique identifier (first 8 chars become the Tiled key) |
+| *(any others)* | No | Become container metadata automatically |
+
+**Artifact DataFrame** -- one row per artifact:
+
+| Column | Required | Description |
+|--------|----------|-------------|
+| `huid` | Yes | Links to parent Hamiltonian |
+| `type` | Yes | Artifact key (e.g. `rixs`, `mh_powder_30T`) |
+| `file` | Yes | Relative path to HDF5 file (from `base_dir`) |
+| `dataset` | Yes | HDF5 internal dataset path (e.g. `/spectra`) |
+| `index` | No | Row index for batched arrays |
+| *(any others)* | No | Become artifact metadata automatically |
+
+### 3. Server Config
+
+Add your `base_dir` to `readable_storage` in `config.yml`:
+
+```yaml
+readable_storage:
+  - "/existing/path"
+  - "/path/to/hdf5/root"   # <-- add this
+```
+
+### Run It
+
+```bash
+cd demo
+
+# Generate manifests
+uv run $UV_DEPS python ../generate.py datasets/mydata.yml -n 100
+
+# Bulk ingest (offline)
+uv run $UV_DEPS python ../ingest.py datasets/mydata.yml
+
+# Or HTTP register (live server)
+uv run $UV_DEPS python ../register.py datasets/mydata.yml
+```
+
+---
+
+## Running Tests
+
+### Unit Tests (no server required)
+
+```bash
+uv run --with pytest $UV_DEPS \
+  pytest tests/test_config.py tests/test_utils.py tests/test_generic_registration.py -v
+```
+
+### Integration Tests (require running server with data)
+
+```bash
+# Terminal 1: start server
+uv run --with 'tiled[server]' tiled serve config config.yml --api-key secret
+
+# Terminal 2: run tests
+uv run --with pytest --with 'ruamel.yaml' pytest tests/ -v
+```
+
+| Test File | Type | What It Covers |
+|-----------|------|----------------|
+| `test_config.py` | Unit | Configuration loading, path resolution |
+| `test_utils.py` | Unit | Artifact key generation, shared helpers |
+| `test_generic_registration.py` | Unit | Node preparation for VDP + NiPS3 datasets |
+| `test_registration.py` | Integration | HTTP and bulk registration |
+| `test_data_retrieval.py` | Integration | Mode A/B data access |
+
+---
 
 ## Directory Structure
 
 ```
 tiled_poc/
-├── config.yml                          # Server configuration (port 8005)
-├── catalog.db                          # SQLite database (created by server)
-├── scripts/
-│   ├── config.py                       # Configuration loader
-│   ├── utils.py                        # Shared utilities
-│   ├── register_catalog.py             # HTTP-based registration
-│   ├── bulk_register.py                # SQLAlchemy bulk registration
-│   └── query_manifest.py               # Mode A: query → direct HDF5
-├── examples/
-│   ├── demo_dual_mode.py               # CLI demo of both modes
-│   ├── demo_mh_dataset.py              # Marimo notebook demo
-│   └── demo_mh_dataset_with_query.py   # Marimo + query_manifest API
-└── tests/
-    ├── conftest.py                     # Shared pytest fixtures
-    ├── test_config.py                  # Configuration unit tests
-    ├── test_utils.py                   # Utility unit tests
-    ├── test_registration.py            # Registration integration tests
-    └── test_data_retrieval.py          # Mode A/B integration tests
+├── config.yml                  # Server config (port 8005)
+├── generate.py                 # CLI: generate Parquet manifests
+├── ingest.py                   # CLI: bulk ingest into catalog.db
+├── register.py                 # CLI: HTTP register into running server
+│
+├── broker/                     # Core library
+│   ├── config.py               # YAML config loading + accessors
+│   ├── utils.py                # Shared helpers (JSON safe, shape cache)
+│   ├── bulk_register.py        # SQLAlchemy bulk registration
+│   ├── http_register.py        # HTTP registration via Tiled client
+│   ├── catalog.py              # Catalog creation + dataset registration
+│   └── query_manifest.py       # Mode A discovery API
+│
+├── extra/                      # Manifest generators (one per dataset)
+│   ├── gen_vdp_manifest.py
+│   ├── gen_edrixs_manifest.py
+│   └── gen_multimodal_manifest.py
+│
+├── demo/                       # Self-contained multi-dataset demo
+│   ├── config.yml              # Demo server config (port 8006)
+│   ├── explore.py              # Marimo notebook
+│   └── datasets/               # Dataset YAML configs
+│       ├── vdp.yml
+│       ├── edrixs.yml
+│       └── multimodal.yml
+│
+├── examples/                   # Standalone example scripts
+│   ├── demo_dual_mode.py
+│   ├── demo_mh_dataset.py
+│   └── demo_mh_dataset_with_query.py
+│
+└── tests/                      # Test suite
+    ├── conftest.py
+    ├── test_config.py
+    ├── test_utils.py
+    ├── test_generic_registration.py
+    ├── test_registration.py
+    ├── test_data_retrieval.py
+    └── testdata/               # Synthetic test data (VDP + NiPS3)
 ```
-
-## Configuration
-
-Edit `config.yml` to change:
-- Server port (default: 8005)
-- Database location
-- Data source paths
-- Default registration count (`max_hamiltonians: 10`)
-
-Use `VDP_MAX_HAMILTONIANS` environment variable to override the default count.
-
-## Data Access After Registration
-
-```python
-from tiled.client import from_uri
-
-client = from_uri("http://localhost:8005", api_key="secret")
-
-# List Hamiltonians
-print(list(client.keys())[:5])
-
-# Access a Hamiltonian container
-h = client["H_636ce3e4"]
-
-# Mode A: Get artifact path from metadata
-path = h.metadata["path_mh_powder_30T"]
-
-# Mode B: Access array child directly
-arr = h["mh_powder_30T"][:]
-```
-
-## Interactive Demo (Marimo Notebook)
-
-Run the interactive Marimo notebook to explore the dual-mode access patterns:
-
-```bash
-cd $PROJ_VDP/tiled_poc
-
-# Make sure server is running first (in another terminal)
-uv run --with 'tiled[server]' --with pandas --with pyarrow --with h5py \
-  --with marimo --with matplotlib --with torch --with 'ruamel.yaml' \
-  marimo edit examples/demo_mh_dataset.py
-```
-
-The notebook demonstrates:
-- **Mode A (Expert):** `query_manifest()` → direct HDF5 loading for ML pipelines
-- **Mode B (Visualizer):** Tiled adapter access for interactive exploration
-- **Performance comparison** between modes
-- **PyTorch DataLoader** integration
-- **M(H) curve visualization**
-
-## Running Tests
-
-The test suite includes unit tests (no server needed) and integration tests (require running server).
-
-### Unit Tests
-
-```bash
-cd $PROJ_VDP/tiled_poc
-
-# Run unit tests (no server required)
-uv run --with pytest pytest tests/test_config.py tests/test_utils.py -v
-```
-
-### Integration Tests
-
-```bash
-# 1. Start server in one terminal
-uv run --with 'tiled[server]' tiled serve config config.yml --api-key secret
-
-# 2. Register test data (small subset)
-VDP_MAX_HAMILTONIANS=5 uv run --with 'tiled[server]' --with pandas --with pyarrow --with h5py --with 'ruamel.yaml' \
-  python scripts/register_catalog.py
-
-# 3. Run integration tests
-uv run --with pytest --with 'ruamel.yaml' pytest tests/ -v
-```
-
-### Test Categories
-
-| Test File | Type | Description |
-|-----------|------|-------------|
-| `test_config.py` | Unit | Configuration loading, path resolution |
-| `test_utils.py` | Unit | Artifact key generation |
-| `test_registration.py` | Integration | HTTP and bulk registration methods |
-| `test_data_retrieval.py` | Integration | Mode A/B data access, equivalence |
-
-## Expected Database Size (SQLite)
-
-| Hamiltonians | Approximate Size | Registration Time |
-|--------------|------------------|-------------------|
-| 10 | ~300 KB | ~2 sec |
-| 1,000 | ~20 MB | ~5 min |
-| 10,000 | ~192 MB | ~90 min |
-
-**Note:** Registration rate decreases as database grows due to SQLite B-tree overhead (starts at ~55/sec, drops to ~1.7/sec).
 
 ---
 
-## PostgreSQL Backend (Recommended for Production)
+## Troubleshooting
 
-For better performance with large datasets, use PostgreSQL instead of SQLite.
+### "Server not running" error
+Start the server first, then run `register.py`.
 
-### Prerequisites
-
-PostgreSQL must be installed and running. See `docs/INSTALL-POSTGRES.md` for setup instructions.
-
-### PostgreSQL Quick Start
-
-**Terminal 1 - Start PostgreSQL server (if not running):**
+### Port already in use
 ```bash
-source /sdf/data/lcls/ds/prj/prjmaiqmag01/results/cwang31/postgres/setup_postgres.sh
-pg_ctl -D $PG_DATA -l $PG_LOG/postgres.log start
+lsof -ti :8005 | xargs kill
 ```
 
-**Terminal 2 - Start Tiled with PostgreSQL:**
-```bash
-cd $PROJ_VDP/tiled_poc
+### "Server error 500" during registration
+The database may be corrupted. Stop the server, delete `catalog.db`, and
+restart (the server creates a fresh database on startup).
 
-uv run --with 'tiled[server]' --with asyncpg \
-  tiled serve config config_postgres.yml --api-key secret
-```
+### Re-ingesting data
+`ingest.py` is **additive** -- running it twice creates duplicates. To
+re-ingest, delete `catalog.db` first. `register.py` is **incremental** and
+safe to run multiple times.
 
-Server runs on **port 8007**.
+---
 
-**Terminal 3 - Run registration:**
-```bash
-cd $PROJ_VDP/tiled_poc
+## Performance Reference
 
-# Register 10 Hamiltonians (test)
-TILED_URL=http://localhost:8007 VDP_MAX_HAMILTONIANS=10 \
-  uv run --with 'tiled[server]' --with pandas --with pyarrow --with h5py --with 'ruamel.yaml' \
-  python scripts/register_catalog.py
+### Bulk Registration (`ingest.py`)
 
-# Register all 10K Hamiltonians
-TILED_URL=http://localhost:8007 VDP_MAX_HAMILTONIANS=10000 \
-  uv run --with 'tiled[server]' --with pandas --with pyarrow --with h5py --with 'ruamel.yaml' \
-  python scripts/register_catalog.py
-```
+| Hamiltonians | Approx. Time | DB Size |
+|--------------|-------------|---------|
+| 10 | < 1 sec | ~300 KB |
+| 1,000 | ~5 sec | ~20 MB |
+| 10,000 | ~53 sec | ~192 MB |
 
-### Clean PostgreSQL Registration
+### PostgreSQL Backend
 
-To start fresh with PostgreSQL:
-
-```bash
-# 1. Reset database
-source /sdf/data/lcls/ds/prj/prjmaiqmag01/results/cwang31/postgres/setup_postgres.sh
-PGPASSWORD=vdp_secret psql -U vdp_admin -d vdp_catalog -c "
-DROP SCHEMA public CASCADE;
-CREATE SCHEMA public;
-GRANT ALL ON SCHEMA public TO vdp_admin;"
-
-# 2. Initialize Tiled catalog
-uv run --with 'tiled[server]' --with asyncpg \
-  tiled catalog init 'postgresql+asyncpg://vdp_admin:vdp_secret@localhost:5433/vdp_catalog'
-
-# 3. Start server and run registration (as shown above)
-```
-
-### PostgreSQL vs SQLite
-
-| Feature | SQLite | PostgreSQL |
-|---------|--------|------------|
-| Config file | `config.yml` | `config_postgres.yml` |
-| Port | 8005 | 8007 |
-| Extra package | - | `asyncpg` |
-| Bulk loading | Limited | `DISABLE TRIGGER` support |
-| Concurrent access | Limited | Full support |
-
-### PostgreSQL Documentation
-
-See `docs/V6A-POSTGRES-NOTES.md` for detailed setup notes, performance observations, and troubleshooting.
+For concurrent access or very large catalogs, use PostgreSQL instead of SQLite.
+See `docs/V6A-POSTGRES-NOTES.md` for setup and configuration.
