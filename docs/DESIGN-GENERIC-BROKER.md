@@ -31,17 +31,18 @@ After registration, every record in Tiled represents **exactly one logical entit
 Each artifact's metadata includes a **locator** — a uniform accessor:
 
 ```
-(file, index)
+(file, dataset, index)
 ```
 
 - `file` — path to the HDF5 file
+- `dataset` — HDF5 internal dataset path (e.g., `/RIXS`, `/curve/M_parallel`)
 - `index` — row position within a batched file (`null` if the file contains one entity)
 
 ### Examples
 
 ```
-VDP mh_curve:     file=artifacts/c4/uuid.h5,  index=null   → f[dataset][:]
-NiPS3 RIXS:       file=NiPS3_rank0000.h5,     index=42     → f[dataset][42]
+VDP mh_curve:     file=artifacts/c4/uuid.h5,  dataset=/curve/M_parallel,  index=null  → f[dataset][:]
+NiPS3 RIXS:       file=NiPS3_rank0000.h5,     dataset=/RIXS,             index=42    → f[dataset][42]
 ```
 
 The consumer code is uniform:
@@ -186,7 +187,7 @@ def register(ham_df, art_df, client):
 The dual-mode architecture from V6 remains:
 
 - **Mode A (Expert):** Query Tiled metadata for locators, load directly via h5py.
-  Fast for bulk ML workloads. The locator `(file, index, dataset)` is in metadata.
+  Fast for bulk ML workloads. The locator `(file, dataset, index)` is in metadata.
 
 - **Mode B (Visualizer):** Access arrays via Tiled HTTP adapters. Convenient for
   interactive exploration. For batched files, a small custom adapter handles the
