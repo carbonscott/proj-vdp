@@ -171,6 +171,12 @@ def prepare_node_data(ham_df, art_df, max_hamiltonians, base_dir=None):
     if base_dir is None:
         base_dir = get_base_dir()
 
+    if "key" not in ham_df.columns:
+        raise ValueError(
+            "Hamiltonian manifest missing required 'key' column. "
+            "The manifest generator must provide a 'key' for each entity."
+        )
+
     ham_subset = ham_df.head(max_hamiltonians)
     art_grouped = art_df.groupby("huid")
 
@@ -182,7 +188,7 @@ def prepare_node_data(ham_df, art_df, max_hamiltonians, base_dir=None):
 
     for _, ham_row in ham_subset.iterrows():
         huid = str(ham_row["huid"])
-        h_key = f"H_{huid[:8]}"
+        h_key = str(ham_row["key"])
 
         # Build Hamiltonian metadata dynamically from ALL manifest columns
         metadata = {}

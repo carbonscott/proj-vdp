@@ -79,7 +79,7 @@ def generate(output_dir, n_hamiltonians=10):
 
         with h5py.File(h5_path, "r") as f:
             # Read scalar parameters
-            record = {"huid": huid}
+            record = {"huid": huid, "key": f"H_{huid[:8]}"}
             for name in PARAM_NAMES:
                 record[name] = float(f[name][()])
             ham_records.append(record)

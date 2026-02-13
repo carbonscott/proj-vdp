@@ -13,7 +13,7 @@ For experienced users who have done this before:
 - [ ] **Explore:** Open the files yourself, inspect shapes/dtypes/structure.
 - [ ] **Pattern:** Identify which data pattern applies (A: one file per artifact, B: batched, C: multi-artifact per file).
 - [ ] **Generator:** Write `extra/gen_{name}_manifest.py` with `generate(output_dir, n_hamiltonians) → (ham_df, art_df)`.
-- [ ] **Hamiltonians Parquet:** One row per Hamiltonian. Required column: `huid`. All other columns become metadata.
+- [ ] **Hamiltonians Parquet:** One row per Hamiltonian. Required columns: `huid`, `key`. All other columns become metadata.
 - [ ] **Artifacts Parquet:** One row per artifact. Required columns: `huid`, `type`, `file`, `dataset`. Optional: `index`.
 - [ ] **Key rule:** `type` must be unique per `huid`.
 - [ ] **Generate:** Run your generator, inspect the Parquet output.
@@ -148,19 +148,20 @@ files with a small set of standard columns.
 
 ### Hamiltonian manifest
 
-One row per Hamiltonian. One required column; everything else is free-form.
+One row per Hamiltonian. Two required columns; everything else is free-form.
 
 | Column | Required | Description |
 |--------|----------|-------------|
 | `huid` | **Yes** | Unique Hamiltonian ID (string) |
+| `key` | **Yes** | Tiled catalog key (must be unique across all datasets) |
 | *(all other columns)* | Dynamic | Become Tiled metadata as-is |
 
 Example:
 
-| huid | J1 | J2 | K | D |
-|------|----|----|---|---|
-| sw_00001 | 1.5 | 0.3 | 0.01 | 0.05 |
-| sw_00002 | 2.0 | 0.1 | 0.02 | 0.10 |
+| huid | key | J1 | J2 | K | D |
+|------|-----|----|----|---|---|
+| sw_00001 | H_sw_00001 | 1.5 | 0.3 | 0.01 | 0.05 |
+| sw_00002 | H_sw_00002 | 2.0 | 0.1 | 0.02 | 0.10 |
 
 ### Artifact manifest
 
@@ -318,6 +319,7 @@ def generate(output_dir, n_hamiltonians=None):
     art_rows = []
 
     # --- Iterate over your data and populate ham_rows / art_rows ---
+    # Each ham_row must include "huid" and "key" at minimum.
     # (This part is dataset-specific. See examples below.)
 
     ham_df = pd.DataFrame(ham_rows)
@@ -382,7 +384,7 @@ def generate(output_dir, n_hamiltonians=None):
             # Read parameters
             params = {p: float(f[f"params/{p}"][()]) for p in PARAM_NAMES}
 
-        ham_rows.append({"huid": huid, **params})
+        ham_rows.append({"huid": huid, "key": f"H_{huid[:8]}", **params})
 
         # One artifact row per type
         for art_type, dataset_path in ARTIFACT_MAP.items():
@@ -447,7 +449,7 @@ print(art.head())
 ```
 
 **Check before proceeding:**
-- Hamiltonian manifest has `huid` + your parameter columns
+- Hamiltonian manifest has `huid`, `key`, + your parameter columns
 - Artifact manifest has `huid`, `type`, `file`, `dataset` (and `index` if batched)
 - `type` values are unique within each `huid` group
 - `file` paths are relative and point to real files

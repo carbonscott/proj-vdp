@@ -113,6 +113,12 @@ def register_dataset_http(client, ham_df, art_df, base_dir, label):
     art_count = 0
     skip_count = 0
 
+    if "key" not in ham_df.columns:
+        raise ValueError(
+            "Hamiltonian manifest missing required 'key' column. "
+            "The manifest generator must provide a 'key' for each entity."
+        )
+
     # Pre-group artifacts by huid for O(1) lookup
     print("Pre-grouping artifacts by huid...")
     art_grouped = art_df.groupby("huid")
@@ -122,7 +128,7 @@ def register_dataset_http(client, ham_df, art_df, base_dir, label):
 
     for i, (_, ham_row) in enumerate(ham_df.iterrows()):
         huid = str(ham_row["huid"])
-        h_key = f"H_{huid[:8]}"
+        h_key = str(ham_row["key"])
 
         # Skip if container already exists
         if h_key in client:

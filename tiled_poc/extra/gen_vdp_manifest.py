@@ -102,7 +102,8 @@ def generate(output_dir, n_hamiltonians=10):
     # 3. Make type unique per Hamiltonian
     art_df["type"] = art_df.apply(_make_unique_type, axis=1)
 
-    # Hamiltonian manifest stays as-is (all columns become metadata)
+    # Add key column (Tiled catalog key for each Hamiltonian)
+    ham_df["key"] = ham_df["huid"].apply(lambda h: f"H_{h[:8]}")
 
     # Write Parquet files
     ham_out = output_dir / "vdp_hamiltonians.parquet"

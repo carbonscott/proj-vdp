@@ -179,6 +179,10 @@ The data provider's manifest generator is responsible for:
 4. **Column names follow the standard.** The required columns are listed
    below; all other columns are free-form and become metadata as-is.
 
+5. **`key` values are unique across all entities in the catalog.** The `key`
+   column becomes the Tiled container key. It must not contain `/` characters
+   and must not collide with keys from other datasets in the same catalog.
+
 ### Hamiltonian manifest format
 
 A Parquet file with one row per Hamiltonian:
@@ -186,19 +190,20 @@ A Parquet file with one row per Hamiltonian:
 | Column | Required | Description |
 |--------|----------|-------------|
 | `huid` | Yes | Unique Hamiltonian identifier (string) |
+| `key` | Yes | Tiled catalog key (must be unique across all datasets) |
 | *(all other columns)* | Dynamic | Become Tiled metadata as-is |
 
 Example (VDP):
 
-| huid | Ja_meV | Jb_meV | Jc_meV | Dc_meV | spin_s | g_factor |
-|------|--------|--------|--------|--------|--------|----------|
-| 636ce3e4-... | 1.5 | 2.0 | -0.3 | 0.1 | 2.5 | 2.0 |
+| huid | key | Ja_meV | Jb_meV | Jc_meV | Dc_meV | spin_s | g_factor |
+|------|-----|--------|--------|--------|--------|--------|----------|
+| 636ce3e4-... | H_636ce3e4 | 1.5 | 2.0 | -0.3 | 0.1 | 2.5 | 2.0 |
 
 Example (NiPS3 EDRIXS):
 
-| huid | F2_dd | F2_dp | F4_dd | G1_dp | G3_dp |
-|------|-------|-------|-------|-------|-------|
-| rank0000_0000 | 100.0 | 50.0 | 200.0 | 30.0 | 15.0 |
+| huid | key | F2_dd | F2_dp | F4_dd | G1_dp | G3_dp |
+|------|-----|-------|-------|-------|-------|-------|
+| rank0000_0000 | H_rank0000 | 100.0 | 50.0 | 200.0 | 30.0 | 15.0 |
 
 ### Artifact manifest format
 

@@ -61,7 +61,7 @@ def generate(output_dir, n_hamiltonians=10):
     ham_records = []
     for i in range(n):
         huid = f"edx{i:05d}"
-        record = {"huid": huid}
+        record = {"huid": huid, "key": f"H_{huid[:8]}"}
         for name in PARAM_NAMES:
             record[name] = float(params[name][i])
         ham_records.append(record)

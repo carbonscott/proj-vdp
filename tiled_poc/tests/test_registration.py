@@ -180,7 +180,7 @@ class TestBulkRegistration:
 
             # Insert test nodes
             for _, row in ham_df.iterrows():
-                h_key = f"H_{row['huid'][:8]}"
+                h_key = row["key"]
                 conn.execute(
                     text("INSERT INTO nodes (key, parent) VALUES (:key, 0)"),
                     {"key": h_key}

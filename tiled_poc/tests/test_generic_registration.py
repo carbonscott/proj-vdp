@@ -83,7 +83,8 @@ class TestVDPRegistration:
         assert len(art_nodes) == 15  # 3 artifacts per Hamiltonian
         assert len(art_ds) == 15
 
-    def test_hamiltonian_key_format(self, vdp_manifests):
+    def test_hamiltonian_key_from_manifest(self, vdp_manifests):
+        """Keys are read from the manifest's 'key' column, not computed."""
         from broker.bulk_register import prepare_node_data
         ham_df, art_df, base_dir = vdp_manifests
 
@@ -91,9 +92,18 @@ class TestVDPRegistration:
             ham_df, art_df, max_hamiltonians=5, base_dir=base_dir
         )
 
-        for node in ham_nodes:
-            assert node["key"].startswith("H_")
-            assert len(node["key"]) == 10  # H_ + 8 chars
+        for i, node in enumerate(ham_nodes):
+            expected_key = ham_df.iloc[i]["key"]
+            assert node["key"] == expected_key
+
+    def test_missing_key_column_raises(self, vdp_manifests):
+        """Registration fails early if manifest lacks 'key' column."""
+        from broker.bulk_register import prepare_node_data
+        ham_df, art_df, base_dir = vdp_manifests
+
+        ham_no_key = ham_df.drop(columns=["key"])
+        with pytest.raises(ValueError, match="missing required 'key' column"):
+            prepare_node_data(ham_no_key, art_df, max_hamiltonians=1, base_dir=base_dir)
 
     def test_hamiltonian_metadata_has_vdp_params(self, vdp_manifests):
         """VDP metadata should have Ja_meV, Jb_meV, etc. (read dynamically)."""
@@ -342,9 +352,9 @@ class TestGenericBehavior:
         vdp_params = {k for k in vdp_meta if not k.startswith(("path_", "dataset_", "index_"))}
         nips3_params = {k for k in nips3_meta if not k.startswith(("path_", "dataset_", "index_"))}
 
-        # Only "huid" is shared
+        # Only "huid" and "key" are shared (standard columns)
         shared = vdp_params & nips3_params
-        assert shared == {"huid"}
+        assert shared == {"huid", "key"}
 
     def test_structure_family_correct(self, vdp_manifests):
         from broker.bulk_register import prepare_node_data

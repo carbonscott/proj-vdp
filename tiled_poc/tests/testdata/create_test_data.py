@@ -31,6 +31,7 @@ def create_vdp_data():
     huids = [f"aaaa{i:04d}" for i in range(5)]
     ham_data = {
         "huid": huids,
+        "key": [f"H_{h[:8]}" for h in huids],
         "Ja_meV": [1.0, 2.0, 0.5, 3.0, 1.5],
         "Jb_meV": [0.5, 1.0, 0.3, 1.5, 0.7],
         "Jc_meV": [-0.3, -0.5, -0.1, -1.0, -0.4],
@@ -87,6 +88,7 @@ def create_nips3_data():
     huids = [f"rank0000_{i:04d}" for i in range(n_hams)]
     ham_data = {
         "huid": huids,
+        "key": [f"H_{h[:8]}" for h in huids],
         "F2_dd": [100.0 + i * 10 for i in range(n_hams)],
         "F2_dp": [50.0 + i * 5 for i in range(n_hams)],
         "F4_dd": [200.0 + i * 10 for i in range(n_hams)],
