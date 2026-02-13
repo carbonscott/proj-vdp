@@ -17,9 +17,9 @@ Dataset config format (YAML):
     base_dir: /path/to/data
 
 Parquet filenames are derived from the config filename stem:
-    datasets/vdp.yml -> manifests/vdp_hamiltonians.parquet, manifests/vdp_artifacts.parquet
+    datasets/vdp.yml -> manifests/vdp_entities.parquet, manifests/vdp_artifacts.parquet
 
-NOTE: This script is INCREMENTAL. It skips Hamiltonians that already exist
+NOTE: This script is INCREMENTAL. It skips entities that already exist
 in the catalog (by key). Safe to run multiple times.
 
 Requires a running Tiled server. Set TILED_URL and TILED_API_KEY env vars
@@ -48,11 +48,11 @@ def main():
     )
     parser.add_argument("configs", nargs="+", help="Dataset config YAML files")
     parser.add_argument(
-        "-n", "--max-hamiltonians",
+        "-n", "--max-entities",
         type=int,
         default=None,
         metavar="NUM",
-        help="Limit number of Hamiltonians per dataset (default: all)",
+        help="Limit number of entities per dataset (default: all)",
     )
     args = parser.parse_args()
 
@@ -93,27 +93,27 @@ def main():
         label = config["label"]
         base_dir = config["base_dir"]
 
-        ham_path = MANIFESTS_DIR / f"{name}_hamiltonians.parquet"
+        ent_path = MANIFESTS_DIR / f"{name}_entities.parquet"
         art_path = MANIFESTS_DIR / f"{name}_artifacts.parquet"
 
-        if not ham_path.exists() or not art_path.exists():
+        if not ent_path.exists() or not art_path.exists():
             print(f"\nERROR: Parquet files not found for '{name}':")
-            print(f"  Expected: {ham_path}")
+            print(f"  Expected: {ent_path}")
             print(f"  Expected: {art_path}")
             print(f"  Run generate.py first.")
             sys.exit(1)
 
-        ham_df = pd.read_parquet(ham_path)
+        ent_df = pd.read_parquet(ent_path)
         art_df = pd.read_parquet(art_path)
 
         # Apply limit if specified
-        if args.max_hamiltonians is not None:
-            ham_df = ham_df.head(args.max_hamiltonians)
+        if args.max_entities is not None:
+            ent_df = ent_df.head(args.max_entities)
 
         # Clear shape cache between datasets
         get_artifact_shape.__defaults__[-1].clear()
 
-        register_dataset_http(client, ham_df, art_df, base_dir, label)
+        register_dataset_http(client, ent_df, art_df, base_dir, label)
 
     # Verify
     verify_registration_http(client)

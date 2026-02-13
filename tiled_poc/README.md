@@ -46,16 +46,16 @@ manifests. Each dataset has a YAML config in `demo/datasets/`:
 ```bash
 cd demo
 
-# Generate manifests for VDP and EDRIXS (10 Hamiltonians each)
+# Generate manifests for VDP and EDRIXS (10 entities each)
 uv run $UV_DEPS python ../generate.py datasets/vdp.yml datasets/edrixs.yml -n 10
 ```
 
 This creates:
 ```
 demo/manifests/
-  vdp_hamiltonians.parquet
+  vdp_entities.parquet
   vdp_artifacts.parquet
-  edrixs_hamiltonians.parquet
+  edrixs_entities.parquet
   edrixs_artifacts.parquet
 ```
 
@@ -69,7 +69,7 @@ SQLAlchemy (no running server needed).
 uv run $UV_DEPS python ../ingest.py datasets/vdp.yml datasets/edrixs.yml
 ```
 
-This creates `demo/catalog.db` with all Hamiltonians and their artifacts.
+This creates `demo/catalog.db` with all entities and their artifacts.
 
 ### Step 3: Start the Tiled Server
 
@@ -96,7 +96,7 @@ from tiled.client import from_uri
 
 client = from_uri("http://localhost:8006", api_key="secret")
 
-# List Hamiltonians
+# List entities
 print(list(client)[:5])
 # ['H_636ce3e4', 'H_7a1b2c3d', ...]
 
@@ -160,7 +160,7 @@ generate.py          ingest.py             tiled serve
 
 | Scenario | Use | Speed |
 |----------|-----|-------|
-| Initial load of 1K+ Hamiltonians | `ingest.py` | ~2,250 nodes/sec |
+| Initial load of 1K+ entities | `ingest.py` | ~2,250 nodes/sec |
 | Incremental updates to a live server | `register.py` | ~5 nodes/sec |
 
 ---
@@ -168,7 +168,7 @@ generate.py          ingest.py             tiled serve
 ## HTTP Registration (Incremental)
 
 `register.py` registers data into a **running** Tiled server. It is
-incremental: Hamiltonians that already exist (by key) are skipped.
+incremental: entities that already exist (by key) are skipped.
 
 ```bash
 cd demo
@@ -176,7 +176,7 @@ cd demo
 # Register EDRIXS into the already-running server
 uv run $UV_DEPS python ../register.py datasets/edrixs.yml
 
-# Limit to 5 Hamiltonians
+# Limit to 5 entities
 uv run $UV_DEPS python ../register.py datasets/edrixs.yml -n 5
 
 # Register multiple datasets at once
@@ -207,25 +207,25 @@ base_dir: /path/to/hdf5/root
 Must expose one function:
 
 ```python
-def generate(output_dir, n_hamiltonians=10):
+def generate(output_dir, n_entities=10):
     """
     Returns:
-        (ham_df, art_df): Two DataFrames written as Parquet.
+        (ent_df, art_df): Two DataFrames written as Parquet.
     """
 ```
 
-**Hamiltonian DataFrame** -- one row per Hamiltonian:
+**Entity DataFrame** -- one row per entity:
 
 | Column | Required | Description |
 |--------|----------|-------------|
-| `huid` | Yes | Unique identifier (first 8 chars become the Tiled key) |
+| `uid` | Yes | Unique identifier (first 8 chars become the Tiled key) |
 | *(any others)* | No | Become container metadata automatically |
 
 **Artifact DataFrame** -- one row per artifact:
 
 | Column | Required | Description |
 |--------|----------|-------------|
-| `huid` | Yes | Links to parent Hamiltonian |
+| `uid` | Yes | Links to parent entity |
 | `type` | Yes | Artifact key (e.g. `rixs`, `mh_powder_30T`) |
 | `file` | Yes | Relative path to HDF5 file (from `base_dir`) |
 | `dataset` | Yes | HDF5 internal dataset path (e.g. `/spectra`) |
@@ -360,7 +360,7 @@ safe to run multiple times.
 
 ### Bulk Registration (`ingest.py`)
 
-| Hamiltonians | Approx. Time | DB Size |
+| Entities | Approx. Time | DB Size |
 |--------------|-------------|---------|
 | 10 | < 1 sec | ~300 KB |
 | 1,000 | ~5 sec | ~20 MB |

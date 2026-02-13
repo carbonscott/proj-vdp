@@ -3,7 +3,7 @@
 **Date:** 2026-02-12
 **Status:** Draft
 **Branch:** `generic-broker-design`
-**Related:** Issue #1 (Abstract multi-Hamiltonian file structure at registration level)
+**Related:** Issue #1 (Abstract multi-entity file structure at registration level)
 
 ---
 
@@ -19,14 +19,14 @@ Additionally, datasets have different physical storage layouts:
 | Dataset | Files | Layout |
 |---------|-------|--------|
 | VDP (Daniel) | 110K small HDF5 files | 1 artifact per file |
-| NiPS3 (Tom) | 32 large HDF5 files | 3,125 Hamiltonians batched per file |
+| NiPS3 (Tom) | 32 large HDF5 files | 3,125 entities batched per file |
 
 The broker should not care about these differences.
 
 ## 2. Core Abstraction: The Locator
 
 After registration, every record in Tiled represents **exactly one logical entity**
-(one Hamiltonian with its artifacts), regardless of physical storage.
+(one parameter set with its artifacts), regardless of physical storage.
 
 Each artifact's metadata includes a **locator** — a uniform accessor:
 
@@ -65,7 +65,7 @@ their responsibility.
 ### Layering
 
 ```
-User code:        "Give me Hamiltonian #42's RIXS spectrum"
+User code:        "Give me entity #42's RIXS spectrum"
                             |
 Tiled broker:     metadata query -> locator (file, index, dataset)
                             |
@@ -79,20 +79,20 @@ Returns:          numpy array — one complete artifact
 The manifest is the **contract between the simulator and the broker**. Whoever
 generates the data also provides a manifest. The broker reads it generically.
 
-### Hamiltonian Manifest
+### Entity Manifest
 
-A Parquet file with one row per Hamiltonian:
+A Parquet file with one row per entity:
 
 | Column | Required | Description |
 |--------|----------|-------------|
-| `huid` | Yes | Unique Hamiltonian identifier |
+| `uid` | Yes | Unique entity identifier |
 | *(all other columns)* | Dynamic | Become Tiled metadata as-is |
 
 The broker does NOT hardcode column names. It reads all columns dynamically:
 
 ```python
-skip = {"huid"}
-for col in ham_df.columns:
+skip = {"uid"}
+for col in ent_df.columns:
     if col not in skip:
         metadata[col] = row[col]
 ```
@@ -103,11 +103,11 @@ identically — they're just metadata keys.
 
 ### Artifact Manifest
 
-A Parquet file with one row per artifact (one logical entity):
+A Parquet file with one row per artifact:
 
 | Column | Required | Description |
 |--------|----------|-------------|
-| `huid` | Yes | Foreign key to parent Hamiltonian |
+| `uid` | Yes | Foreign key to parent entity |
 | `type` | Yes | Artifact type (becomes Tiled child key) |
 | `file` | Yes | Path to HDF5 file |
 | `dataset` | Yes | HDF5 internal dataset path (e.g., `/RIXS`, `/curve/M_parallel`) |
@@ -119,16 +119,16 @@ batched files into individual rows at manifest-generation time:
 
 ```
 # NiPS3: 32 files x 3,125 per file = 100,000 artifact rows
-huid=rank0000_0000, type=rixs, file=NiPS3_rank0000.h5, dataset=/RIXS, index=0
-huid=rank0000_0001, type=rixs, file=NiPS3_rank0000.h5, dataset=/RIXS, index=1
+uid=rank0000_0000, type=rixs, file=NiPS3_rank0000.h5, dataset=/RIXS, index=0
+uid=rank0000_0001, type=rixs, file=NiPS3_rank0000.h5, dataset=/RIXS, index=1
 ...
-huid=rank0000_3124, type=rixs, file=NiPS3_rank0000.h5, dataset=/RIXS, index=3124
-huid=rank0001_0000, type=rixs, file=NiPS3_rank0001.h5, dataset=/RIXS, index=0
+uid=rank0000_3124, type=rixs, file=NiPS3_rank0000.h5, dataset=/RIXS, index=3124
+uid=rank0001_0000, type=rixs, file=NiPS3_rank0001.h5, dataset=/RIXS, index=0
 ...
 
 # VDP: 110K files, one row each
-huid=636ce3e4, type=mh_curve, file=artifacts/c4/uuid.h5, dataset=/curve/M_parallel, index=null
-huid=636ce3e4, type=ins_powder, file=artifacts/c4/uuid2.h5, dataset=/ins/broadened, index=null
+uid=636ce3e4, type=mh_curve, file=artifacts/c4/uuid.h5, dataset=/curve/M_parallel, index=null
+uid=636ce3e4, type=ins_powder, file=artifacts/c4/uuid2.h5, dataset=/ins/broadened, index=null
 ...
 ```
 
@@ -143,16 +143,16 @@ hardcoded parameter names or artifact types**.
 ### Pseudocode
 
 ```python
-def register(ham_df, art_df, client):
-    skip_ham = {"huid"}
-    skip_art = {"huid", "type", "file", "dataset", "index"}
+def register(ent_df, art_df, client):
+    skip_ent = {"uid"}
+    skip_art = {"uid", "type", "file", "dataset", "index"}
 
-    for _, ham_row in ham_df.iterrows():
+    for _, ent_row in ent_df.iterrows():
         # Build metadata from ALL manifest columns (dynamic)
-        metadata = {col: ham_row[col] for col in ham_df.columns if col not in skip_ham}
+        metadata = {col: ent_row[col] for col in ent_df.columns if col not in skip_ent}
 
-        # Attach artifact locators to Hamiltonian metadata
-        arts = art_df[art_df["huid"] == ham_row["huid"]]
+        # Attach artifact locators to entity metadata
+        arts = art_df[art_df["uid"] == ent_row["uid"]]
         for _, art_row in arts.iterrows():
             art_key = art_row["type"]
             metadata[f"path_{art_key}"] = art_row["file"]
@@ -162,7 +162,7 @@ def register(ham_df, art_df, client):
 
         # Create Tiled container with all metadata
         container = client.create_container(
-            key=f"H_{ham_row['huid'][:8]}",
+            key=f"H_{ent_row['uid'][:8]}",
             metadata=metadata,
         )
 
@@ -210,7 +210,7 @@ client.search(Spec("VDP"))
 client.search(Spec("NiPS3"))
 ```
 
-Each Hamiltonian container can optionally carry a `specs` tag identifying its
+Each entity container can optionally carry a `specs` tag identifying its
 dataset of origin.
 
 ## 7. Responsibility Boundaries
@@ -259,7 +259,7 @@ query on whatever metadata keys exist.
 
 - Tiled server setup and configuration
 - Dual-mode access pattern (Mode A / Mode B)
-- Hierarchical catalog structure (Hamiltonians as containers, artifacts as children)
+- Hierarchical catalog structure (entities as containers, artifacts as children)
 - Query API (`Key()` searches on metadata)
 - PostgreSQL / SQLite backend choice
 - K8S deployment

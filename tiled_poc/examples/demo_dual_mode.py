@@ -64,7 +64,7 @@ def demo_mode_a_expert(client):
     if len(manifest) > 0:
         print(f"\n  Sample manifest row:")
         row = manifest.iloc[0]
-        print(f"    h_key: {row['h_key']}")
+        print(f"    ent_key: {row['ent_key']}")
         print(f"    Ja_meV: {row['Ja_meV']:.3f}")
         print(f"    path_rel: ...{row['path_rel'][-40:]}")
 
@@ -110,10 +110,10 @@ def demo_mode_b_visualizer(client):
         print("No containers found!")
         return
 
-    h_key = keys[0]
-    h = client[h_key]
+    ent_key = keys[0]
+    h = client[ent_key]
 
-    print(f"Container: {h_key}")
+    print(f"Container: {ent_key}")
     print(f"  Physics params: Ja={h.metadata['Ja_meV']:.3f}, Jb={h.metadata['Jb_meV']:.3f}")
 
     # List available arrays
@@ -175,11 +175,11 @@ def demo_same_data_two_modes(client):
         print("No containers found!")
         return
 
-    h_key = keys[0]
-    h = client[h_key]
+    ent_key = keys[0]
+    h = client[ent_key]
 
     # Mode A: Get path from metadata, load directly
-    print(f"\nContainer: {h_key}")
+    print(f"\nContainer: {ent_key}")
     print("\nMode A (Expert):")
     path_rel = h.metadata.get("path_mh_powder_30T")
     if path_rel:
@@ -230,7 +230,7 @@ def main():
         print(f"  uv run --with 'tiled[server]' tiled serve config {service_dir}/config.yml --api-key secret")
         sys.exit(1)
 
-    print(f"Connected! Catalog contains {len(client)} Hamiltonians")
+    print(f"Connected! Catalog contains {len(client)} entities")
 
     if len(client) == 0:
         print("\nNo data registered yet. Run register_catalog.py first.")

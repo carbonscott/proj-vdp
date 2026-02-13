@@ -22,10 +22,5 @@ broker:
   data_dir: "/sdf/data/lcls/ds/prj/prjmaiqmag01/results/vdp"
   schema_version: "schema_v1"
 
-  # Manifest file patterns (resolved relative to base_dir)
-  manifests:
-    hamiltonians: "manifest_hamiltonians_*.parquet"
-    artifacts: "manifest_artifacts_*.parquet"
-
-  # Registration defaults (override with VDP_MAX_HAMILTONIANS env var)
-  max_hamiltonians: 10
+  # Registration defaults (override with MAX_ENTITIES env var)
+  max_entities: 10

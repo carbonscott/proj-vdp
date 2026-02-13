@@ -39,15 +39,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 class TestLoadManifests:
     """Tests for manifest loading (used by both registration methods)."""
 
-    def test_load_hamiltonians_manifest(self):
-        """Test that Hamiltonians manifest can be loaded."""
+    def test_load_entities_manifest(self):
+        """Test that entities manifest can be loaded."""
         from broker.config import get_latest_manifest
 
-        path = get_latest_manifest("hamiltonians")
+        path = get_latest_manifest("entities")
         df = pd.read_parquet(path)
 
         assert len(df) > 0
-        assert "huid" in df.columns
+        assert "uid" in df.columns
 
     def test_load_artifacts_manifest(self):
         """Test that Artifacts manifest can be loaded."""
@@ -58,20 +58,20 @@ class TestLoadManifests:
 
         assert len(df) > 0
         assert "type" in df.columns
-        assert "huid" in df.columns
+        assert "uid" in df.columns
 
-    def test_manifests_have_matching_huids(self):
-        """Test that artifact huids match Hamiltonian huids."""
+    def test_manifests_have_matching_uids(self):
+        """Test that artifact uids match entity uids."""
         from broker.config import get_latest_manifest
 
-        ham_df = pd.read_parquet(get_latest_manifest("hamiltonians"))
+        ent_df = pd.read_parquet(get_latest_manifest("entities"))
         art_df = pd.read_parquet(get_latest_manifest("artifacts"))
 
-        ham_huids = set(ham_df["huid"])
-        art_huids = set(art_df["huid"])
+        ent_uids = set(ent_df["uid"])
+        art_uids = set(art_df["uid"])
 
-        # All artifact huids should exist in Hamiltonians
-        assert art_huids.issubset(ham_huids)
+        # All artifact uids should exist in entities
+        assert art_uids.issubset(ent_uids)
 
 
 @pytest.mark.integration
@@ -82,13 +82,13 @@ class TestHttpRegistration:
     """
 
     def test_server_has_containers(self, tiled_client):
-        """Test that registered Hamiltonians appear as containers."""
+        """Test that registered entities appear as containers."""
         assert len(tiled_client) > 0
 
     def test_container_has_metadata(self, tiled_client):
         """Test that containers have physics parameters in metadata."""
-        h_key = list(tiled_client.keys())[0]
-        h = tiled_client[h_key]
+        ent_key = list(tiled_client.keys())[0]
+        h = tiled_client[ent_key]
 
         # Check physics parameters
         assert "Ja_meV" in h.metadata
@@ -98,8 +98,8 @@ class TestHttpRegistration:
 
     def test_container_has_artifact_paths(self, tiled_client):
         """Test that containers have artifact paths in metadata (Mode A)."""
-        h_key = list(tiled_client.keys())[0]
-        h = tiled_client[h_key]
+        ent_key = list(tiled_client.keys())[0]
+        h = tiled_client[ent_key]
 
         # Check for path metadata (Mode A support)
         path_keys = [k for k in h.metadata.keys() if k.startswith("path_")]
@@ -107,16 +107,16 @@ class TestHttpRegistration:
 
     def test_container_has_children(self, tiled_client):
         """Test that containers have artifact children (Mode B)."""
-        h_key = list(tiled_client.keys())[0]
-        h = tiled_client[h_key]
+        ent_key = list(tiled_client.keys())[0]
+        h = tiled_client[ent_key]
 
         children = list(h.keys())
         assert len(children) > 0
 
     def test_container_children_are_arrays(self, tiled_client):
         """Test that children are accessible as arrays."""
-        h_key = list(tiled_client.keys())[0]
-        h = tiled_client[h_key]
+        ent_key = list(tiled_client.keys())[0]
+        h = tiled_client[ent_key]
 
         children = list(h.keys())
         if "mh_powder_30T" in children:
@@ -164,7 +164,7 @@ class TestBulkRegistration:
         from broker.config import get_latest_manifest
 
         # Load small subset of manifests
-        ham_df = pd.read_parquet(get_latest_manifest("hamiltonians")).head(3)
+        ent_df = pd.read_parquet(get_latest_manifest("entities")).head(3)
 
         # Create simple test database
         engine = create_engine(f"sqlite:///{temp_catalog_db}")
@@ -179,11 +179,11 @@ class TestBulkRegistration:
             """))
 
             # Insert test nodes
-            for _, row in ham_df.iterrows():
-                h_key = row["key"]
+            for _, row in ent_df.iterrows():
+                ent_key = row["key"]
                 conn.execute(
                     text("INSERT INTO nodes (key, parent) VALUES (:key, 0)"),
-                    {"key": h_key}
+                    {"key": ent_key}
                 )
             conn.commit()
 

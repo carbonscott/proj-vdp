@@ -16,7 +16,7 @@ Dataset config format (YAML):
     base_dir: /path/to/data
 
 Parquet filenames are derived from the config filename stem:
-    datasets/vdp.yml → manifests/vdp_hamiltonians.parquet, manifests/vdp_artifacts.parquet
+    datasets/vdp.yml → manifests/vdp_entities.parquet, manifests/vdp_artifacts.parquet
 
 IMPORTANT: This script is ADDITIVE. Running it twice with the same config
 will create duplicate entries. To re-ingest, delete catalog.db first.
@@ -75,20 +75,20 @@ def main():
         label = config["label"]
         base_dir = config["base_dir"]
 
-        ham_path = MANIFESTS_DIR / f"{name}_hamiltonians.parquet"
+        ent_path = MANIFESTS_DIR / f"{name}_entities.parquet"
         art_path = MANIFESTS_DIR / f"{name}_artifacts.parquet"
 
-        if not ham_path.exists() or not art_path.exists():
+        if not ent_path.exists() or not art_path.exists():
             print(f"\nERROR: Parquet files not found for '{name}':")
-            print(f"  Expected: {ham_path}")
+            print(f"  Expected: {ent_path}")
             print(f"  Expected: {art_path}")
             print(f"  Run generate.py first.")
             sys.exit(1)
 
-        ham_df = pd.read_parquet(ham_path)
+        ent_df = pd.read_parquet(ent_path)
         art_df = pd.read_parquet(art_path)
 
-        register_dataset(engine, ham_df, art_df, base_dir, label)
+        register_dataset(engine, ent_df, art_df, base_dir, label)
 
     # Verify
     from broker.bulk_register import verify_registration

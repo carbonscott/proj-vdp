@@ -54,7 +54,7 @@ class TestModeAQueryManifest:
 
         manifest = query_manifest(tiled_client, axis="powder", Hmax_T=30)
 
-        required_cols = ["huid", "h_key", "Ja_meV", "Jb_meV", "Jc_meV", "Dc_meV", "path_rel"]
+        required_cols = ["uid", "ent_key", "Ja_meV", "Jb_meV", "Jc_meV", "Dc_meV", "path_rel"]
         for col in required_cols:
             assert col in manifest.columns, f"Missing column: {col}"
 
@@ -129,8 +129,8 @@ class TestModeBTiledAdapter:
 
     def test_access_mh_curve_array(self, tiled_client):
         """Test accessing M(H) curve as Tiled array."""
-        h_key = list(tiled_client.keys())[0]
-        h = tiled_client[h_key]
+        ent_key = list(tiled_client.keys())[0]
+        h = tiled_client[ent_key]
 
         if "mh_powder_30T" in h.keys():
             arr = h["mh_powder_30T"][:]
@@ -139,8 +139,8 @@ class TestModeBTiledAdapter:
 
     def test_access_ins_spectrum_array(self, tiled_client):
         """Test accessing INS spectrum as Tiled array."""
-        h_key = list(tiled_client.keys())[0]
-        h = tiled_client[h_key]
+        ent_key = list(tiled_client.keys())[0]
+        h = tiled_client[ent_key]
 
         if "ins_12meV" in h.keys():
             arr = h["ins_12meV"][:]
@@ -151,8 +151,8 @@ class TestModeBTiledAdapter:
 
     def test_access_gs_state_array(self, tiled_client):
         """Test accessing ground state as Tiled array."""
-        h_key = list(tiled_client.keys())[0]
-        h = tiled_client[h_key]
+        ent_key = list(tiled_client.keys())[0]
+        h = tiled_client[ent_key]
 
         if "gs_state" in h.keys():
             arr = h["gs_state"][:]
@@ -161,8 +161,8 @@ class TestModeBTiledAdapter:
 
     def test_array_slicing_works(self, tiled_client):
         """Test that array slicing works via Tiled."""
-        h_key = list(tiled_client.keys())[0]
-        h = tiled_client[h_key]
+        ent_key = list(tiled_client.keys())[0]
+        h = tiled_client[ent_key]
 
         if "mh_powder_30T" in h.keys():
             # Slice first 100 points
@@ -175,8 +175,8 @@ class TestModeBTiledAdapter:
 
     def test_metadata_accessible(self, tiled_client):
         """Test that physics metadata is accessible."""
-        h_key = list(tiled_client.keys())[0]
-        h = tiled_client[h_key]
+        ent_key = list(tiled_client.keys())[0]
+        h = tiled_client[ent_key]
 
         # Physics parameters should be floats
         assert isinstance(h.metadata["Ja_meV"], (int, float))
@@ -192,8 +192,8 @@ class TestModeAModeBEquivalence:
         """Test that Mode A and Mode B return same M(H) data."""
         from broker.config import get_base_dir
 
-        h_key = list(tiled_client.keys())[0]
-        h = tiled_client[h_key]
+        ent_key = list(tiled_client.keys())[0]
+        h = tiled_client[ent_key]
 
         if "mh_powder_30T" not in h.keys():
             pytest.skip("mh_powder_30T not available")
@@ -219,8 +219,8 @@ class TestModeAModeBEquivalence:
         """Test that metadata matches values in HDF5 files."""
         from broker.config import get_base_dir
 
-        h_key = list(tiled_client.keys())[0]
-        h = tiled_client[h_key]
+        ent_key = list(tiled_client.keys())[0]
+        h = tiled_client[ent_key]
 
         # Get any path from metadata
         path_rel = h.metadata.get("path_mh_powder_30T")

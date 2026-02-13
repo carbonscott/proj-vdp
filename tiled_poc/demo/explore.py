@@ -19,7 +19,7 @@ def cell_connect():
 
         Connected to Tiled at `http://localhost:8006`
 
-        **Total Hamiltonian containers:** {total}
+        **Total entity containers:** {total}
         """
     )
     return client, mo
@@ -38,7 +38,7 @@ def cell_overview(client, mo):
     for label, ks in [("VDP", vdp_keys), ("EDRIXS", edrixs_keys), ("Multimodal", mm_keys)]:
         if ks:
             children_example = list(client[ks[0]])
-            lines.append(f"- **{label}**: {len(ks)} Hamiltonians, children: `{children_example}`")
+            lines.append(f"- **{label}**: {len(ks)} entities, children: `{children_example}`")
         else:
             lines.append(f"- **{label}**: *not ingested yet*")
 
@@ -59,8 +59,8 @@ def cell_vdp(client, vdp_keys, mo):
     import numpy as np
     import h5py
 
-    h_key = vdp_keys[0]
-    h = client[h_key]
+    ent_key = vdp_keys[0]
+    h = client[ent_key]
 
     # Mode B: read via Tiled adapter
     art_key = "mh_powder_30T"
@@ -82,7 +82,7 @@ def cell_vdp(client, vdp_keys, mo):
         f"""
         ## VDP Retrieval
 
-        Hamiltonian: `{h_key}`
+        Entity: `{ent_key}`
         Children: `{list(h)}`
 
         **`{art_key}`** shape: `{mode_b.shape}`
@@ -107,8 +107,8 @@ def cell_edrixs(client, edrixs_keys, mo):
     import os
     import h5py
 
-    h_key = edrixs_keys[0]
-    h = client[h_key]
+    ent_key = edrixs_keys[0]
+    h = client[ent_key]
     meta = dict(h.metadata)
 
     # Mode A: batched spectra require index-based access via h5py
@@ -121,13 +121,13 @@ def cell_edrixs(client, edrixs_keys, mo):
     with h5py.File(full_path, "r") as f:
         spectrum = f[dataset_path][index]
 
-    param_keys = [k for k in meta if not k.startswith(("path_", "dataset_", "index_", "huid"))]
+    param_keys = [k for k in meta if not k.startswith(("path_", "dataset_", "index_", "uid"))]
 
     mo.md(
         f"""
         ## EDRIXS Retrieval (Mode A)
 
-        Hamiltonian: `{h_key}`
+        Entity: `{ent_key}`
         Children: `{list(h)}`
 
         **`rixs`** shape: `{spectrum.shape}`, index: `{index}`
@@ -150,8 +150,8 @@ def cell_multimodal(client, mm_keys, mo):
         mo.md("## Multimodal\n\n*Not ingested yet.*")
         return
 
-    h_key = mm_keys[0]
-    h = client[h_key]
+    ent_key = mm_keys[0]
+    h = client[ent_key]
     children = list(h)
 
     shapes = {}
@@ -160,13 +160,13 @@ def cell_multimodal(client, mm_keys, mo):
         shapes[child_key] = arr.shape
 
     meta = dict(h.metadata)
-    param_keys = [k for k in meta if not k.startswith(("path_", "dataset_", "index_", "huid"))]
+    param_keys = [k for k in meta if not k.startswith(("path_", "dataset_", "index_", "uid"))]
 
     mo.md(
         f"""
         ## Multimodal Retrieval
 
-        Hamiltonian: `{h_key}`
+        Entity: `{ent_key}`
         Children ({len(children)}): `{children}`
 
         | Artifact | Shape |

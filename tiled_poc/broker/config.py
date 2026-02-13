@@ -67,7 +67,7 @@ def get_latest_manifest(prefix):
     otherwise falls back to the default pattern ``manifest_{prefix}_*.parquet``.
 
     Args:
-        prefix: "hamiltonians" or "artifacts"
+        prefix: "entities" or "artifacts"
 
     Returns:
         str: Path to the latest manifest file.
@@ -104,7 +104,7 @@ def get_api_key():
     return os.environ.get("TILED_API_KEY", "secret")
 
 
-def get_max_hamiltonians():
-    """Get max Hamiltonians to register (from env or config)."""
-    default = get_config().get("max_hamiltonians", 10)
-    return int(os.environ.get("VDP_MAX_HAMILTONIANS", default))
+def get_max_entities():
+    """Get max entities to register (from env or config)."""
+    default = get_config().get("max_entities", 10)
+    return int(os.environ.get("MAX_ENTITIES", default))

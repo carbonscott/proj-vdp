@@ -1,7 +1,7 @@
 """
 HTTP Registration via Tiled Client.
 
-Registers Hamiltonians with BOTH:
+Registers entities with BOTH:
 - Artifact locators in container metadata (for expert path-based access)
 - Array children via DataSource adapters (for visualization/chunked access)
 
@@ -14,7 +14,7 @@ When to use:
 - Server is running and serving queries
 
 When NOT to use:
-- Initial bulk load of 1K+ Hamiltonians (use bulk_register.py / ingest.py)
+- Initial bulk load of 1K+ entities (use bulk_register.py / ingest.py)
 """
 
 import os
@@ -90,60 +90,60 @@ def create_data_source(art_row, base_dir):
     return data_source, data_shape, data_dtype
 
 
-def register_dataset_http(client, ham_df, art_df, base_dir, label):
+def register_dataset_http(client, ent_df, art_df, base_dir, label):
     """Register one dataset via HTTP through a running Tiled server.
 
-    Creates Hamiltonian containers with locator metadata (Mode A) and
+    Creates entity containers with locator metadata (Mode A) and
     array children via DataSource adapters (Mode B).
 
     Args:
         client: Tiled client connected to a running server.
-        ham_df: Hamiltonian manifest DataFrame.
+        ent_df: Entity manifest DataFrame.
         art_df: Artifact manifest DataFrame.
         base_dir: Base directory for resolving relative file paths.
         label: Dataset name (for logging).
 
     Returns:
-        bool: True if any Hamiltonians were registered.
+        bool: True if any entities were registered.
     """
     from tiled.structures.core import StructureFamily
 
     start_time = time.time()
-    ham_count = 0
+    ent_count = 0
     art_count = 0
     skip_count = 0
 
-    if "key" not in ham_df.columns:
+    if "key" not in ent_df.columns:
         raise ValueError(
-            "Hamiltonian manifest missing required 'key' column. "
+            "Entity manifest missing required 'key' column. "
             "The manifest generator must provide a 'key' for each entity."
         )
 
-    # Pre-group artifacts by huid for O(1) lookup
-    print("Pre-grouping artifacts by huid...")
-    art_grouped = art_df.groupby("huid")
+    # Pre-group artifacts by uid for O(1) lookup
+    print("Pre-grouping artifacts by uid...")
+    art_grouped = art_df.groupby("uid")
 
-    n = len(ham_df)
-    print(f"\n--- Registering {label} ({n} Hamiltonians via HTTP) ---")
+    n = len(ent_df)
+    print(f"\n--- Registering {label} ({n} entities via HTTP) ---")
 
-    for i, (_, ham_row) in enumerate(ham_df.iterrows()):
-        huid = str(ham_row["huid"])
-        h_key = str(ham_row["key"])
+    for i, (_, ent_row) in enumerate(ent_df.iterrows()):
+        uid = str(ent_row["uid"])
+        ent_key = str(ent_row["key"])
 
         # Skip if container already exists
-        if h_key in client:
+        if ent_key in client:
             skip_count += 1
             continue
 
         # Build metadata dynamically from ALL manifest columns
         metadata = {}
-        for col in ham_df.columns:
-            metadata[col] = to_json_safe(ham_row[col])
+        for col in ent_df.columns:
+            metadata[col] = to_json_safe(ent_row[col])
 
         # Attach artifact locators to metadata (for Mode A access)
         artifacts = None
-        if huid in art_grouped.groups:
-            artifacts = art_grouped.get_group(huid)
+        if uid in art_grouped.groups:
+            artifacts = art_grouped.get_group(uid)
             for _, art_row in artifacts.iterrows():
                 art_key = make_artifact_key(art_row)
                 metadata[f"path_{art_key}"] = art_row["file"]
@@ -152,8 +152,8 @@ def register_dataset_http(client, ham_df, art_df, base_dir, label):
                     metadata[f"index_{art_key}"] = int(art_row["index"])
 
         # Create container with all metadata
-        h_container = client.create_container(key=h_key, metadata=metadata)
-        ham_count += 1
+        ent_container = client.create_container(key=ent_key, metadata=metadata)
+        ent_count += 1
 
         # Register arrays as children (Mode B)
         if artifacts is not None:
@@ -177,7 +177,7 @@ def register_dataset_http(client, ham_df, art_df, base_dir, label):
                             art_metadata[col] = to_json_safe(art_row[col])
 
                     # Register artifact as child of container
-                    h_container.new(
+                    ent_container.new(
                         structure_family=StructureFamily.array,
                         data_sources=[data_source],
                         key=art_key,
@@ -192,16 +192,16 @@ def register_dataset_http(client, ham_df, art_df, base_dir, label):
         if (i + 1) % 5 == 0 or (i + 1) == n:
             elapsed = time.time() - start_time
             rate = (i + 1) / elapsed if elapsed > 0 else 0
-            print(f"  Progress: {i+1}/{n} Hamiltonians ({rate:.1f}/sec)")
+            print(f"  Progress: {i+1}/{n} entities ({rate:.1f}/sec)")
 
     elapsed_total = time.time() - start_time
     print(f"\nRegistration complete:")
-    print(f"  Hamiltonians: {ham_count}")
+    print(f"  Entities:     {ent_count}")
     print(f"  Artifacts:    {art_count}")
     print(f"  Skipped:      {skip_count}")
     print(f"  Time:         {elapsed_total:.1f} seconds")
 
-    return ham_count > 0
+    return ent_count > 0
 
 
 def verify_registration_http(client):
@@ -215,7 +215,7 @@ def verify_registration_http(client):
     print("=" * 50)
 
     total = len(client)
-    print(f"Total Hamiltonian containers: {total}")
+    print(f"Total entity containers: {total}")
 
     if total == 0:
         print("No containers registered yet.")
@@ -225,11 +225,11 @@ def verify_registration_http(client):
     print(f"First 3 container keys: {keys}")
 
     if keys:
-        h_key = keys[0]
-        h = client[h_key]
+        ent_key = keys[0]
+        h = client[ent_key]
         meta = dict(h.metadata)
 
-        print(f"\nContainer '{h_key}':")
+        print(f"\nContainer '{ent_key}':")
 
         param_keys = [k for k in meta if not k.startswith(("path_", "dataset_", "index_"))]
         print(f"  Metadata keys: {param_keys}")

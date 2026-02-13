@@ -14,8 +14,8 @@ Use `uv` to run python programs. The UV_CACHE_DIR avoids repeated package downlo
 ## Project Overview
 
 This is the **VDP Hierarchical Tiled Catalog** - a clean implementation using Tiled's container structure where:
-- **Hamiltonians are containers** with physics parameters (Ja, Jb, Jc, Dc) as metadata
-- **Artifacts are children** of their parent Hamiltonian (gs_state, mh_curve, ins_powder)
+- **Entities are containers** with physics parameters (Ja, Jb, Jc, Dc) as metadata
+- **Artifacts are children** of their parent entity (gs_state, mh_curve, ins_powder)
 - **Keys are human-readable**: `H_636ce3e4/mh_powder_30T` instead of UUIDs
 
 ## Directory Structure
@@ -105,7 +105,7 @@ uv run --with pytest pytest tests/ -v
 
 ```
 /                           <- Root
-  /H_636ce3e4/              <- Container (Hamiltonian)
+  /H_636ce3e4/              <- Container (entity)
       metadata: {Ja_meV, Jb_meV, Jc_meV, Dc_meV, spin_s, g_factor, path_*}
       gs_state              <- Array (3x8)
       mh_x_7T, mh_y_7T, mh_z_7T, mh_powder_7T    <- Arrays (200,)
@@ -121,7 +121,7 @@ uv run --with pytest pytest tests/ -v
 
 **Manifests (Parquet):**
 ```
-$VDP_DATA/data/schema_v1/manifest_hamiltonians_*.parquet  (10K rows)
+$VDP_DATA/data/schema_v1/manifest_entities_*.parquet  (10K rows)
 $VDP_DATA/data/schema_v1/manifest_artifacts_*.parquet    (110K rows)
 ```
 

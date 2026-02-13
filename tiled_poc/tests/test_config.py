@@ -45,12 +45,11 @@ class TestLoadConfig:
         assert "data_dir" in cfg
         assert "service_dir" in cfg
 
-    def test_has_manifests_section(self):
+    def test_no_manifests_section(self):
+        """Manifests section removed; code uses fallback pattern."""
         from broker.config import load_config
         cfg = load_config()
-        assert "manifests" in cfg
-        assert "hamiltonians" in cfg["manifests"]
-        assert "artifacts" in cfg["manifests"]
+        assert "manifests" not in cfg
 
     def test_no_dataset_paths(self):
         """The generic config should NOT have hardcoded dataset_paths."""
@@ -87,9 +86,10 @@ class TestGetBaseDir:
 class TestGetLatestManifest:
     """Tests for get_latest_manifest()."""
 
-    def test_finds_hamiltonians_manifest(self):
+    @pytest.mark.skip(reason="requires generated manifests (run generate.py first)")
+    def test_finds_entities_manifest(self):
         from broker.config import get_latest_manifest
-        path = get_latest_manifest("hamiltonians")
+        path = get_latest_manifest("entities")
         assert path.endswith(".parquet")
         assert os.path.exists(path)
 
@@ -104,40 +104,39 @@ class TestGetLatestManifest:
         with pytest.raises(FileNotFoundError):
             get_latest_manifest("nonexistent_prefix")
 
-    def test_uses_configured_pattern(self):
-        """Manifest pattern comes from config.yml manifests section."""
-        from broker.config import get_config
-        cfg = get_config()
-        assert "manifests" in cfg
-        # The configured pattern should be used by get_latest_manifest
-        assert "hamiltonians" in cfg["manifests"]
+    def test_fallback_pattern_is_generic(self):
+        """Without manifests config, fallback uses manifest_{prefix}_*.parquet."""
+        from broker.config import get_latest_manifest, get_base_dir
+        # The fallback pattern should be generic (no dataset-specific names)
+        with pytest.raises(FileNotFoundError, match="manifest_entities_"):
+            get_latest_manifest("entities")
 
 
-class TestGetMaxHamiltonians:
-    """Tests for get_max_hamiltonians()."""
+class TestGetMaxEntities:
+    """Tests for get_max_entities()."""
 
     def test_returns_integer(self):
-        from broker.config import get_max_hamiltonians
-        result = get_max_hamiltonians()
+        from broker.config import get_max_entities
+        result = get_max_entities()
         assert isinstance(result, int)
 
     def test_default_is_positive(self):
-        from broker.config import get_max_hamiltonians
-        result = get_max_hamiltonians()
+        from broker.config import get_max_entities
+        result = get_max_entities()
         assert result > 0
 
     def test_respects_env_variable(self):
-        """Test that VDP_MAX_HAMILTONIANS environment variable is respected."""
+        """Test that MAX_ENTITIES environment variable is respected."""
         import broker.config as config
 
-        os.environ["VDP_MAX_HAMILTONIANS"] = "42"
+        os.environ["MAX_ENTITIES"] = "42"
         config._config = None
         importlib.reload(config)
 
-        result = config.get_max_hamiltonians()
+        result = config.get_max_entities()
         assert result == 42
 
-        del os.environ["VDP_MAX_HAMILTONIANS"]
+        del os.environ["MAX_ENTITIES"]
         config._config = None
         importlib.reload(config)
 

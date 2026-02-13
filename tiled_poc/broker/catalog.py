@@ -41,12 +41,12 @@ def ensure_catalog(db_path, readable_storage, writable_storage):
     return create_engine(uri)
 
 
-def register_dataset(engine, ham_df, art_df, base_dir, label):
+def register_dataset(engine, ent_df, art_df, base_dir, label):
     """Generate nodes from manifests and bulk-register into the catalog.
 
     Args:
         engine: SQLAlchemy engine.
-        ham_df: Hamiltonian manifest DataFrame.
+        ent_df: Entity manifest DataFrame.
         art_df: Artifact manifest DataFrame.
         base_dir: Base directory for resolving relative file paths.
         label: Dataset name (for logging).
@@ -54,14 +54,14 @@ def register_dataset(engine, ham_df, art_df, base_dir, label):
     from .bulk_register import prepare_node_data, bulk_register
     from .utils import get_artifact_shape
 
-    n = len(ham_df)
-    print(f"\n--- Registering {label} ({n} Hamiltonians) ---")
+    n = len(ent_df)
+    print(f"\n--- Registering {label} ({n} entities) ---")
 
     # Clear shape cache to avoid cross-dataset collisions
     get_artifact_shape.__defaults__[-1].clear()
 
-    ham_nodes, art_nodes, art_data_sources = prepare_node_data(
-        ham_df, art_df, max_hamiltonians=n, base_dir=base_dir,
+    ent_nodes, art_nodes, art_data_sources = prepare_node_data(
+        ent_df, art_df, max_entities=n, base_dir=base_dir,
     )
 
-    bulk_register(engine, ham_nodes, art_nodes, art_data_sources)
+    bulk_register(engine, ent_nodes, art_nodes, art_data_sources)

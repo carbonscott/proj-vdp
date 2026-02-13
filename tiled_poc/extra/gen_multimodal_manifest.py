@@ -13,10 +13,10 @@ Reads individual HDF5 files, each containing 9 scalar parameters and
     ins_powder  — Powder S(|Q|,w), shape (512, 256)
     ins_powder_mask — Powder mask, shape (512, 256)
 
-HUID format: ``mm_{file_id}`` (e.g., ``mm_401``)
+UID format: ``mm_{file_id}`` (e.g., ``mm_401``)
 
 Interface:
-    generate(output_dir, n_hamiltonians=10) → (ham_df, art_df)
+    generate(output_dir, n_entities=10) → (ent_df, art_df)
 
 Source data:
     /sdf/.../tlinker/data/NiPS3_Multimodal_Synthetic/data/*.h5
@@ -45,15 +45,15 @@ ARTIFACT_MAP = {
 }
 
 
-def generate(output_dir, n_hamiltonians=10):
+def generate(output_dir, n_entities=10):
     """Generate Multimodal manifests in the generic broker standard.
 
     Args:
         output_dir: Directory to write Parquet files.
-        n_hamiltonians: Number of Hamiltonians to include.
+        n_entities: Number of entities to include.
 
     Returns:
-        (ham_df, art_df): Hamiltonian and artifact DataFrames.
+        (ent_df, art_df): Entity and artifact DataFrames.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -63,46 +63,46 @@ def generate(output_dir, n_hamiltonians=10):
         Path(MULTIMODAL_DIR).glob("*.h5"),
         key=lambda p: int(p.stem),
     )
-    n = min(n_hamiltonians, len(h5_files))
+    n = min(n_entities, len(h5_files))
     h5_files = h5_files[:n]
 
     print(f"  Multimodal source: {len(list(Path(MULTIMODAL_DIR).glob('*.h5')))} files in {MULTIMODAL_DIR}")
 
-    ham_records = []
+    ent_records = []
     art_records = []
 
     for h5_path in h5_files:
         file_id = h5_path.stem  # e.g., "401"
-        huid = f"mm_{file_id}"
+        uid = f"mm_{file_id}"
         # Relative path from the readable_storage root
         file_rel = h5_path.name  # e.g., "401.h5"
 
         with h5py.File(h5_path, "r") as f:
             # Read scalar parameters
-            record = {"huid": huid, "key": f"H_{huid[:8]}"}
+            record = {"uid": uid, "key": f"H_{uid[:8]}"}
             for name in PARAM_NAMES:
                 record[name] = float(f[name][()])
-            ham_records.append(record)
+            ent_records.append(record)
 
             # Register artifacts
             for art_key, ds_name in ARTIFACT_MAP.items():
                 art_records.append({
-                    "huid": huid,
+                    "uid": uid,
                     "type": art_key,
                     "file": file_rel,
                     "dataset": ds_name,
                 })
 
-    ham_df = pd.DataFrame(ham_records)
+    ent_df = pd.DataFrame(ent_records)
     art_df = pd.DataFrame(art_records)
 
     # Write Parquet files
-    ham_out = output_dir / "multimodal_hamiltonians.parquet"
+    ent_out = output_dir / "multimodal_entities.parquet"
     art_out = output_dir / "multimodal_artifacts.parquet"
-    ham_df.to_parquet(ham_out, index=False)
+    ent_df.to_parquet(ent_out, index=False)
     art_df.to_parquet(art_out, index=False)
 
-    print(f"  Multimodal output: {len(ham_df)} Hamiltonians, {len(art_df)} artifacts")
+    print(f"  Multimodal output: {len(ent_df)} entities, {len(art_df)} artifacts")
     print(f"  Written to: {output_dir}")
 
-    return ham_df, art_df
+    return ent_df, art_df

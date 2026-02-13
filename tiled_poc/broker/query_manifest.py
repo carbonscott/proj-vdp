@@ -63,7 +63,7 @@ def query_manifest(client, *, artifact_type="mh_curve", axis=None, Hmax_T=None,
 
     Returns:
         DataFrame with columns:
-            huid, h_key, Ja_meV, Jb_meV, Jc_meV, Dc_meV, spin_s, g_factor, path_rel
+            uid, ent_key, Ja_meV, Jb_meV, Jc_meV, Dc_meV, spin_s, g_factor, path_rel
     """
     # Build Tiled query from physics parameters
     results = client
@@ -102,7 +102,7 @@ def query_manifest(client, *, artifact_type="mh_curve", axis=None, Hmax_T=None,
     # Extract manifest rows from query results
     # Use .items() for batch fetching (9-12x faster than per-key lookup)
     rows = []
-    for h_key, h in results.items():
+    for ent_key, h in results.items():
         meta = h.metadata
         path_rel = meta.get(path_key)
 
@@ -110,8 +110,8 @@ def query_manifest(client, *, artifact_type="mh_curve", axis=None, Hmax_T=None,
             continue  # Skip if this artifact type doesn't exist
 
         rows.append({
-            "huid": meta["huid"],
-            "h_key": h_key,
+            "uid": meta["uid"],
+            "ent_key": ent_key,
             "Ja_meV": meta["Ja_meV"],
             "Jb_meV": meta["Jb_meV"],
             "Jc_meV": meta["Jc_meV"],
@@ -280,7 +280,7 @@ def main():
     # Connect to Tiled
     print(f"Connecting to {tiled_url}...")
     client = from_uri(tiled_url, api_key=api_key)
-    print(f"Catalog contains {len(client)} Hamiltonians")
+    print(f"Catalog contains {len(client)} entities")
 
     # Query manifest
     print("\nQuerying manifest (axis=powder, Hmax_T=30)...")
@@ -291,7 +291,7 @@ def main():
 
     if len(manifest) > 0:
         print(f"\nManifest preview (first 3 rows):")
-        print(manifest[["h_key", "Ja_meV", "Jb_meV", "Jc_meV", "Dc_meV"]].head(3).to_string())
+        print(manifest[["ent_key", "Ja_meV", "Jb_meV", "Jc_meV", "Dc_meV"]].head(3).to_string())
 
     # Load data
     print("\nLoading data from HDF5...")

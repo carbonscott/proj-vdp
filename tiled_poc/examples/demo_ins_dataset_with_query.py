@@ -96,8 +96,8 @@ def _(API_KEY, TILED_URL, mo):
 
     mo.md(f"""**Connected to VDP server at `{TILED_URL}`.**
 
-    - Full catalog: **{len(client)}** Hamiltonians
-    - After query (`Ja > 0.5`, `Dc < -0.5`): **{len(subset)}** Hamiltonians
+    - Full catalog: **{len(client)}** entities
+    - After query (`Ja > 0.5`, `Dc < -0.5`): **{len(subset)}** entities
 
     ### What This Query Means for INS Spectra
 
@@ -118,7 +118,7 @@ def _(mo):
     mo.md(r"""
     ## Browse INS Artifacts
 
-    Each Hamiltonian container has two INS spectra:
+    Each entity container has two INS spectra:
 
     | Artifact | Shape | Description |
     |----------|-------|-------------|
@@ -134,12 +134,12 @@ def _(mo):
 
 @app.cell
 def _(mo, subset):
-    # Get first Hamiltonian container from the filtered subset
-    h_keys = list(subset.keys())[:5]
-    h_key = h_keys[0] if h_keys else None
+    # Get first entity container from the filtered subset
+    ent_keys = list(subset.keys())[:5]
+    ent_key = ent_keys[0] if ent_keys else None
 
-    if h_key:
-        h = subset[h_key]
+    if ent_key:
+        h = subset[ent_key]
 
         # Physics parameters
         physics_keys = ["Ja_meV", "Jb_meV", "Jc_meV", "Dc_meV", "spin_s", "g_factor"]
@@ -157,7 +157,7 @@ def _(mo, subset):
         ])
 
         _output = mo.md(f"""
-    ### Container: `{h_key}`
+    ### Container: `{ent_key}`
 
     **Physics Parameters:**
 
@@ -174,10 +174,10 @@ def _(mo, subset):
     else:
         h = None
         ins_keys = []
-        _output = mo.md("No Hamiltonians found. Run `register_catalog.py` first.")
+        _output = mo.md("No entities found. Run `register_catalog.py` first.")
 
     _output
-    return h, h_key, ins_keys
+    return h, ent_key, ins_keys
 
 
 @app.cell(hide_code=True)
@@ -189,7 +189,7 @@ def _(mo):
 
     ```python
     # Query Tiled for metadata → get HDF5 paths → load directly
-    for h_key, h in subset.items():
+    for ent_key, h in subset.items():
         path = h.metadata["path_ins_12meV"]
         with h5py.File(path, "r") as f:
             spectrum = f["data"][:]
@@ -214,7 +214,7 @@ def _(INCIDENT_ENERGY_MEV, MAX_SPECTRA_DEMO, mo, np, subset, time):
         spectra_list = []
         params_list = []
 
-        for i, (h_key, h) in enumerate(tiled_client.items()):
+        for i, (ent_key, h) in enumerate(tiled_client.items()):
             if max_spectra and i >= max_spectra:
                 break
 
@@ -282,7 +282,7 @@ def _(INCIDENT_ENERGY_MEV, MAX_SPECTRA_DEMO, mo, np, subset, time):
         spectra_list = []
         params_list = []
 
-        for i, (h_key, h) in enumerate(tiled_client.items()):
+        for i, (ent_key, h) in enumerate(tiled_client.items()):
             if max_spectra and i >= max_spectra:
                 break
 
@@ -428,17 +428,17 @@ def _(np):
             self.client = tiled_client
             self.artifact_key = f"ins_{int(Ei_meV)}meV"
             # Cache keys that have the requested artifact
-            self.h_keys = [
+            self.ent_keys = [
                 k for k, h in tiled_client.items()
                 if self.artifact_key in h.keys()
             ]
 
         def __len__(self):
-            return len(self.h_keys)
+            return len(self.ent_keys)
 
         def __getitem__(self, idx):
-            h_key = self.h_keys[idx]
-            h = self.client[h_key]
+            ent_key = self.ent_keys[idx]
+            h = self.client[ent_key]
 
             # Load via Tiled adapter
             spectrum = h[self.artifact_key][:]
@@ -472,7 +472,7 @@ def _(BATCH_SIZE, DataLoader, INCIDENT_ENERGY_MEV, INSDataset, mo, subset, time)
     mo.md(f"""
     ### DataLoader Demo
 
-    **Dataset size:** {len(ins_dataset)} Hamiltonians with `ins_12meV`
+    **Dataset size:** {len(ins_dataset)} entities with `ins_12meV`
     **Batch size:** 2
 
     **First batch loaded in {load_time_dl:.1f} ms:**

@@ -5,12 +5,12 @@ Reads a monolithic HDF5 file with 10K RIXS spectra:
   - 12 parameter arrays in ``params/{name}``, each shape (10000,)
   - Spectra in ``spectra``, shape (10000, 151, 40)
 
-Each Hamiltonian gets one ``rixs`` artifact with an ``index`` into the
-spectra array.  HUID format: ``edx00000``, ``edx00001``, ...
+Each entity gets one ``rixs`` artifact with an ``index`` into the
+spectra array.  UID format: ``edx00000``, ``edx00001``, ...
 (3-char prefix + 5-digit index, 8 chars total for unique keys.)
 
 Interface:
-    generate(output_dir, n_hamiltonians=10) → (ham_df, art_df)
+    generate(output_dir, n_entities=10) → (ent_df, art_df)
 
 Source data:
     /sdf/.../tlinker/data/EDRIXS/NiPS3_combined_2.h5
@@ -35,45 +35,45 @@ PARAM_NAMES = [
 ]
 
 
-def generate(output_dir, n_hamiltonians=10):
+def generate(output_dir, n_entities=10):
     """Generate EDRIXS manifests in the generic broker standard.
 
     Args:
         output_dir: Directory to write Parquet files.
-        n_hamiltonians: Number of Hamiltonians to include.
+        n_entities: Number of entities to include.
 
     Returns:
-        (ham_df, art_df): Hamiltonian and artifact DataFrames.
+        (ent_df, art_df): Entity and artifact DataFrames.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     with h5py.File(EDRIXS_H5, "r") as f:
         n_total = f["spectra"].shape[0]
-        n = min(n_hamiltonians, n_total)
+        n = min(n_entities, n_total)
 
         # Read parameter arrays (first n entries)
         params = {}
         for name in PARAM_NAMES:
             params[name] = f[f"params/{name}"][:n]
 
-    # Build Hamiltonian manifest
-    ham_records = []
+    # Build entity manifest
+    ent_records = []
     for i in range(n):
-        huid = f"edx{i:05d}"
-        record = {"huid": huid, "key": f"H_{huid[:8]}"}
+        uid = f"edx{i:05d}"
+        record = {"uid": uid, "key": f"H_{uid[:8]}"}
         for name in PARAM_NAMES:
             record[name] = float(params[name][i])
-        ham_records.append(record)
+        ent_records.append(record)
 
-    ham_df = pd.DataFrame(ham_records)
+    ent_df = pd.DataFrame(ent_records)
 
-    # Build artifact manifest — one rixs spectrum per Hamiltonian
+    # Build artifact manifest — one rixs spectrum per entity
     art_records = []
     for i in range(n):
-        huid = f"edx{i:05d}"
+        uid = f"edx{i:05d}"
         art_records.append({
-            "huid": huid,
+            "uid": uid,
             "type": "rixs",
             "file": EDRIXS_FILE_REL,
             "dataset": "spectra",
@@ -83,13 +83,13 @@ def generate(output_dir, n_hamiltonians=10):
     art_df = pd.DataFrame(art_records)
 
     # Write Parquet files
-    ham_out = output_dir / "edrixs_hamiltonians.parquet"
+    ent_out = output_dir / "edrixs_entities.parquet"
     art_out = output_dir / "edrixs_artifacts.parquet"
-    ham_df.to_parquet(ham_out, index=False)
+    ent_df.to_parquet(ent_out, index=False)
     art_df.to_parquet(art_out, index=False)
 
     print(f"  EDRIXS source: {n_total} total spectra in {Path(EDRIXS_H5).name}")
-    print(f"  EDRIXS output: {len(ham_df)} Hamiltonians, {len(art_df)} artifacts")
+    print(f"  EDRIXS output: {len(ent_df)} entities, {len(art_df)} artifacts")
     print(f"  Written to: {output_dir}")
 
-    return ham_df, art_df
+    return ent_df, art_df

@@ -76,7 +76,7 @@ def _(TILED_URL, API_KEY, mo):
     from tiled.queries import Key
 
     client = from_uri(TILED_URL, api_key=API_KEY)
-    mo.md(f"**Connected to VDP server at `{TILED_URL}`.** Catalog contains **{len(client)}** Hamiltonian containers.")
+    mo.md(f"**Connected to VDP server at `{TILED_URL}`.** Catalog contains **{len(client)}** entity containers.")
     return Key, client, from_uri
 
 
@@ -85,7 +85,7 @@ def _(mo):
     mo.md(r"""
     ## Browse Hierarchical Structure
 
-    Each Hamiltonian is a **container** with:
+    Each entity is a **container** with:
     - **Metadata**: Physics parameters + artifact paths
     - **Children**: Artifacts accessible via Tiled adapters
     """)
@@ -94,12 +94,12 @@ def _(mo):
 
 @app.cell
 def _(client, mo):
-    # Get first Hamiltonian container
-    h_keys = list(client.keys())[:5]
-    h_key = h_keys[0] if h_keys else None
+    # Get first entity container
+    ent_keys = list(client.keys())[:5]
+    ent_key = ent_keys[0] if ent_keys else None
 
-    if h_key:
-        h = client[h_key]
+    if ent_key:
+        h = client[ent_key]
         children = list(h.keys())
 
         # Physics parameters
@@ -120,7 +120,7 @@ def _(client, mo):
         ])
 
         _output = mo.md(f"""
-### Container: `{h_key}`
+### Container: `{ent_key}`
 
 **Physics Parameters (Metadata):**
 
@@ -142,10 +142,10 @@ def _(client, mo):
         children = []
         physics_keys = []
         path_keys = []
-        _output = mo.md("No Hamiltonians found. Run `register_catalog.py` first.")
+        _output = mo.md("No entities found. Run `register_catalog.py` first.")
 
     _output
-    return h, h_key, h_keys, children, physics_keys, path_keys
+    return h, ent_key, ent_keys, children, physics_keys, path_keys
 
 
 @app.cell(hide_code=True)
@@ -229,7 +229,7 @@ def _(client, np, mo, time):
         Theta_list = []
 
         # Use .items() to iterate all items (not paginated like .keys())
-        for h_key, h in tiled_client.items():
+        for ent_key, h in tiled_client.items():
             if artifact_key not in h.keys():
                 continue
 
@@ -322,7 +322,7 @@ def _(Key, client, mo):
 
 | Query | Count |
 |-------|-------|
-| All Hamiltonians | **{len(client)}** |
+| All entities | **{len(client)}** |
 | `Key("Ja_meV") > 0` (ferromagnetic) | **{len(ferromagnetic)}** |
 | `Key("Ja_meV") < 0` (antiferromagnetic) | **{len(antiferromagnetic)}** |
 | `Key("Ja_meV") < 0` AND `Key("Dc_meV") < 0` | **{len(afm_easy_axis)}** |
@@ -361,17 +361,17 @@ def _(np, client):
             self.client = tiled_client
             self.artifact_key = artifact_key
             # Cache keys that have the requested artifact
-            self.h_keys = [
+            self.ent_keys = [
                 k for k in tiled_client.keys()
                 if artifact_key in tiled_client[k].keys()
             ]
 
         def __len__(self):
-            return len(self.h_keys)
+            return len(self.ent_keys)
 
         def __getitem__(self, idx):
-            h_key = self.h_keys[idx]
-            h = self.client[h_key]
+            ent_key = self.ent_keys[idx]
+            h = self.client[ent_key]
 
             # Load via Tiled adapter
             data = h[self.artifact_key][:]
@@ -405,7 +405,7 @@ def _(DataLoader, VDPDataset, client, mo, time):
     mo.md(f"""
 ### DataLoader Demo
 
-**Dataset size:** {len(dataset)} Hamiltonians with `mh_powder_30T`
+**Dataset size:** {len(dataset)} entities with `mh_powder_30T`
 **Batch size:** 4
 
 **First batch loaded in {load_time_dl:.1f} ms:**
@@ -521,7 +521,7 @@ def _(mo):
     ```
     ┌─────────────────────────────────────────────────────────┐
     │                    VDP Tiled Catalog                    │
-    │         (Hamiltonians as hierarchical containers)        │
+    │         (entities as hierarchical containers)             │
     └─────────────────────────────────────────────────────────┘
                   │                           │
                   ▼                           ▼

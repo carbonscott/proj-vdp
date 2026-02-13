@@ -15,7 +15,7 @@ from .config import get_tiled_url, get_api_key
 
 # Standard columns in the artifact manifest that are NOT stored as metadata.
 # Everything else becomes artifact-level metadata dynamically.
-ARTIFACT_STANDARD_COLS = {"huid", "type", "file", "dataset", "index"}
+ARTIFACT_STANDARD_COLS = {"uid", "type", "file", "dataset", "index"}
 
 
 def to_json_safe(value):
@@ -76,7 +76,7 @@ def make_artifact_key(art_row, prefix=""):
     In the generic manifest standard, the ``type`` column already contains
     the unique artifact key (e.g., ``mh_powder_30T``, ``rixs``).  The
     manifest generator is responsible for producing unique type values
-    per Hamiltonian.
+    per entity.
 
     Args:
         art_row: DataFrame row or dict with at least a ``type`` field.

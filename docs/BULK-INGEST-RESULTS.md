@@ -21,11 +21,11 @@ cd demo
 uv run $UV_DEPS python ../generate.py datasets/vdp.yml datasets/edrixs.yml datasets/multimodal.yml -n 10000
 ```
 
-| Dataset | Hamiltonians | Artifacts | Notes |
+| Dataset | Entities | Artifacts | Notes |
 |---------|-------------|-----------|-------|
-| VDP | 10,000 | 110,000 | 11 artifacts/Hamiltonian (mh curves, gs_state, ins spectra) |
-| EDRIXS | 10,000 | 10,000 | 1 artifact/Hamiltonian (rixs), batched into single HDF5 |
-| Multimodal | 7,616 | 45,696 | 6 artifacts/Hamiltonian (mag_a, mag_b, mag_cs, ins_hisym, ins_powder, ins_powder_mask) |
+| VDP | 10,000 | 110,000 | 11 artifacts/entity (mh curves, gs_state, ins spectra) |
+| EDRIXS | 10,000 | 10,000 | 1 artifact/entity (rixs), batched into single HDF5 |
+| Multimodal | 7,616 | 45,696 | 6 artifacts/entity (mag_a, mag_b, mag_cs, ins_hisym, ins_powder, ins_powder_mask) |
 | **Total** | **27,616** | **165,696** | |
 
 ---
@@ -38,7 +38,7 @@ uv run $UV_DEPS python ../ingest.py datasets/vdp.yml datasets/edrixs.yml dataset
 
 ### Timings
 
-| Dataset | Hamiltonians | Artifacts | Unique Structures | Unique Assets | Time |
+| Dataset | Entities | Artifacts | Unique Structures | Unique Assets | Time |
 |---------|-------------|-----------|-------------------|---------------|------|
 | VDP | 10,000 | 110,000 | 3 | 110,000 | 75.4s |
 | EDRIXS | 10,000 | 10,000 | 1 | 1 | 9.0s |
@@ -47,7 +47,7 @@ uv run $UV_DEPS python ../ingest.py datasets/vdp.yml datasets/edrixs.yml dataset
 
 EDRIXS is fast because all 10K spectra share a single HDF5 file (1 asset)
 and a single structure. Multimodal is moderate because its 7,616 HDF5 files
-are one per Hamiltonian (each with 6 datasets inside).
+are one per entity (each with 6 datasets inside).
 
 ### Database Stats
 
@@ -103,7 +103,7 @@ deduplication.
 ## Known Limitation: EDRIXS Mode B
 
 EDRIXS uses **batched arrays** — all 10K RIXS spectra are stored in a single
-HDF5 dataset of shape `(10000, 151, 40)`. Each Hamiltonian's artifact has an
+HDF5 dataset of shape `(10000, 151, 40)`. Each entity's artifact has an
 `index` parameter that selects one slice (e.g. `spectra[0]` for the first).
 
 The standard Tiled HDF5 adapter does not support the `index` parameter, so

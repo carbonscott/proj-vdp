@@ -4,11 +4,11 @@ Generate VDP manifests in the generic broker standard.
 Reads existing VDP Parquet manifests and transforms them:
   - Rename ``path_rel`` → ``file``
   - Add ``dataset`` column mapped from artifact type
-  - Make ``type`` unique per Hamiltonian (e.g., mh_powder_30T, ins_12meV)
+  - Make ``type`` unique per entity (e.g., mh_powder_30T, ins_12meV)
   - Preserve all original columns as extra metadata
 
 Interface:
-    generate(output_dir, n_hamiltonians=10) → (ham_df, art_df)
+    generate(output_dir, n_entities=10) → (ent_df, art_df)
 
 Source data:
     $VDP_DATA/data/schema_v1/manifest_*.parquet
@@ -63,34 +63,36 @@ def _make_unique_type(row):
     return t
 
 
-def generate(output_dir, n_hamiltonians=10):
+def generate(output_dir, n_entities=10):
     """Generate VDP manifests in the generic broker standard.
 
     Args:
         output_dir: Directory to write Parquet files.
-        n_hamiltonians: Number of Hamiltonians to include.
+        n_entities: Number of entities to include.
 
     Returns:
-        (ham_df, art_df): Hamiltonian and artifact DataFrames.
+        (ent_df, art_df): Entity and artifact DataFrames.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load raw VDP manifests
-    ham_path = _find_latest(f"{VDP_BASE_DIR}/manifest_hamiltonians_*.parquet")
+    ent_path = _find_latest(f"{VDP_BASE_DIR}/manifest_hamiltonians_*.parquet")
     art_path = _find_latest(f"{VDP_BASE_DIR}/manifest_artifacts_*.parquet")
 
-    ham_raw = pd.read_parquet(ham_path)
+    ent_raw = pd.read_parquet(ent_path)
+    ent_raw = ent_raw.rename(columns={"huid": "uid"})
     art_raw = pd.read_parquet(art_path)
+    art_raw = art_raw.rename(columns={"huid": "uid"})
 
-    print(f"  VDP source: {len(ham_raw)} Hamiltonians, {len(art_raw)} artifacts")
+    print(f"  VDP source: {len(ent_raw)} entities, {len(art_raw)} artifacts")
 
-    # Subset Hamiltonians
-    ham_df = ham_raw.head(n_hamiltonians).copy()
-    selected_huids = set(ham_df["huid"])
+    # Subset entities
+    ent_df = ent_raw.head(n_entities).copy()
+    selected_uids = set(ent_df["uid"])
 
-    # Filter artifacts to selected Hamiltonians
-    art_df = art_raw[art_raw["huid"].isin(selected_huids)].copy()
+    # Filter artifacts to selected entities
+    art_df = art_raw[art_raw["uid"].isin(selected_uids)].copy()
 
     # Transform artifact manifest to generic standard
     # 1. Rename path_rel → file
@@ -99,19 +101,19 @@ def generate(output_dir, n_hamiltonians=10):
     # 2. Add dataset column from type mapping
     art_df["dataset"] = art_df["type"].map(DATASET_MAP)
 
-    # 3. Make type unique per Hamiltonian
+    # 3. Make type unique per entity
     art_df["type"] = art_df.apply(_make_unique_type, axis=1)
 
-    # Add key column (Tiled catalog key for each Hamiltonian)
-    ham_df["key"] = ham_df["huid"].apply(lambda h: f"H_{h[:8]}")
+    # Add key column (Tiled catalog key for each entity)
+    ent_df["key"] = ent_df["uid"].apply(lambda h: f"H_{h[:8]}")
 
     # Write Parquet files
-    ham_out = output_dir / "vdp_hamiltonians.parquet"
+    ent_out = output_dir / "vdp_entities.parquet"
     art_out = output_dir / "vdp_artifacts.parquet"
-    ham_df.to_parquet(ham_out, index=False)
+    ent_df.to_parquet(ent_out, index=False)
     art_df.to_parquet(art_out, index=False)
 
-    print(f"  VDP output: {len(ham_df)} Hamiltonians, {len(art_df)} artifacts")
+    print(f"  VDP output: {len(ent_df)} entities, {len(art_df)} artifacts")
     print(f"  Written to: {output_dir}")
 
-    return ham_df, art_df
+    return ent_df, art_df

@@ -28,7 +28,7 @@ Key optimizations:
 - Re-enables trigger for future incremental updates
 
 When to use:
-- Initial bulk load of 1K+ Hamiltonians
+- Initial bulk load of 1K+ entities
 - Fresh database registration
 - Maximum speed needed
 
@@ -37,20 +37,20 @@ When NOT to use:
 - Server is running and serving queries
 
 Usage:
-    # Register with defaults (10 Hamiltonians to catalog.db)
+    # Register with defaults (10 entities to catalog.db)
     python bulk_register.py
 
-    # Register specific number of Hamiltonians
+    # Register specific number of entities
     python bulk_register.py -n 1000
 
-    # Register all Hamiltonians to a specific database
+    # Register all entities to a specific database
     python bulk_register.py -n 10000 -o catalog-bulk.db
 
     # Force overwrite without prompting
     python bulk_register.py -n 100 --force
 
     # Environment variables still work as fallbacks
-    VDP_MAX_HAMILTONIANS=10000 CATALOG_DB=catalog-bulk.db python bulk_register.py
+    MAX_ENTITIES=10000 CATALOG_DB=catalog-bulk.db python bulk_register.py
 """
 
 import os
@@ -69,7 +69,7 @@ from sqlalchemy import create_engine, text
 from .config import (
     get_base_dir,
     get_latest_manifest,
-    get_max_hamiltonians,
+    get_max_entities,
     get_catalog_db_path,
 )
 from .utils import (
@@ -132,73 +132,73 @@ def init_database(db_path):
 
 
 def load_manifests():
-    """Load Hamiltonian and Artifact manifests."""
+    """Load entity and artifact manifests."""
     base_dir = get_base_dir()
     print(f"Loading manifests from {base_dir}...")
 
-    ham_path = get_latest_manifest("hamiltonians")
+    ent_path = get_latest_manifest("entities")
     art_path = get_latest_manifest("artifacts")
 
-    print(f"  Hamiltonians: {Path(ham_path).name}")
-    print(f"  Artifacts:    {Path(art_path).name}")
+    print(f"  Entities:  {Path(ent_path).name}")
+    print(f"  Artifacts: {Path(art_path).name}")
 
-    ham_df = pd.read_parquet(ham_path)
+    ent_df = pd.read_parquet(ent_path)
     art_df = pd.read_parquet(art_path)
 
-    print(f"  Rows: {len(ham_df)} Hamiltonians, {len(art_df)} artifacts")
+    print(f"  Rows: {len(ent_df)} entities, {len(art_df)} artifacts")
 
-    return ham_df, art_df
+    return ent_df, art_df
 
 
-def prepare_node_data(ham_df, art_df, max_hamiltonians, base_dir=None):
+def prepare_node_data(ent_df, art_df, max_entities, base_dir=None):
     """Prepare all node data for bulk insert.
 
     Reads all metadata columns dynamically from manifests -- no hardcoded
     parameter names or artifact types.
 
     Args:
-        ham_df: Hamiltonian manifest DataFrame.
+        ent_df: Entity manifest DataFrame.
         art_df: Artifact manifest DataFrame.
-        max_hamiltonians: Maximum number of Hamiltonians to process.
+        max_entities: Maximum number of entities to process.
         base_dir: Base directory for resolving relative file paths.
             Defaults to get_base_dir().
 
     Returns:
-        ham_nodes: List of Hamiltonian node dicts
+        ent_nodes: List of entity node dicts
         art_nodes: List of artifact node dicts (with placeholder parent)
         art_data_sources: List of data source info for artifacts
     """
     if base_dir is None:
         base_dir = get_base_dir()
 
-    if "key" not in ham_df.columns:
+    if "key" not in ent_df.columns:
         raise ValueError(
-            "Hamiltonian manifest missing required 'key' column. "
+            "Entity manifest missing required 'key' column. "
             "The manifest generator must provide a 'key' for each entity."
         )
 
-    ham_subset = ham_df.head(max_hamiltonians)
-    art_grouped = art_df.groupby("huid")
+    ent_subset = ent_df.head(max_entities)
+    art_grouped = art_df.groupby("uid")
 
-    ham_nodes = []
+    ent_nodes = []
     art_nodes = []
     art_data_sources = []
 
-    print(f"Preparing data for {len(ham_subset)} Hamiltonians...")
+    print(f"Preparing data for {len(ent_subset)} entities...")
 
-    for _, ham_row in ham_subset.iterrows():
-        huid = str(ham_row["huid"])
-        h_key = str(ham_row["key"])
+    for _, ent_row in ent_subset.iterrows():
+        uid = str(ent_row["uid"])
+        ent_key = str(ent_row["key"])
 
-        # Build Hamiltonian metadata dynamically from ALL manifest columns
+        # Build entity metadata dynamically from ALL manifest columns
         metadata = {}
-        for col in ham_df.columns:
-            metadata[col] = to_json_safe(ham_row[col])
+        for col in ent_df.columns:
+            metadata[col] = to_json_safe(ent_row[col])
 
-        # Attach artifact locators to Hamiltonian metadata (for Mode A access)
+        # Attach artifact locators to entity metadata (for Mode A access)
         artifacts = None
-        if huid in art_grouped.groups:
-            artifacts = art_grouped.get_group(huid)
+        if uid in art_grouped.groups:
+            artifacts = art_grouped.get_group(uid)
             for _, art_row in artifacts.iterrows():
                 art_key = make_artifact_key(art_row)
                 metadata[f"path_{art_key}"] = art_row["file"]
@@ -206,16 +206,16 @@ def prepare_node_data(ham_df, art_df, max_hamiltonians, base_dir=None):
                 if "index" in art_row.index and pd.notna(art_row.get("index")):
                     metadata[f"index_{art_key}"] = int(art_row["index"])
 
-        ham_nodes.append({
-            "key": h_key,
-            "huid": huid,  # For linking artifacts
+        ent_nodes.append({
+            "key": ent_key,
+            "uid": uid,  # For linking artifacts
             "structure_family": "container",
             "metadata": metadata,
             "specs": [],
             "access_blob": {},
         })
 
-        # Process artifacts for this Hamiltonian
+        # Process artifacts for this entity
         if artifacts is not None:
             for _, art_row in artifacts.iterrows():
                 art_key = make_artifact_key(art_row)
@@ -263,7 +263,7 @@ def prepare_node_data(ham_df, art_df, max_hamiltonians, base_dir=None):
 
                 art_nodes.append({
                     "key": art_key,
-                    "parent_huid": huid,  # For linking to parent
+                    "parent_uid": uid,  # For linking to parent
                     "structure_family": "array",
                     "metadata": art_metadata,
                     "specs": [],
@@ -272,7 +272,7 @@ def prepare_node_data(ham_df, art_df, max_hamiltonians, base_dir=None):
 
                 art_data_sources.append({
                     "art_key": art_key,
-                    "parent_huid": huid,
+                    "parent_uid": uid,
                     "structure_id": structure_id,
                     "structure": structure,
                     "h5_path": h5_full_path,
@@ -280,11 +280,11 @@ def prepare_node_data(ham_df, art_df, max_hamiltonians, base_dir=None):
                     "parameters": ds_params,
                 })
 
-    print(f"  Prepared {len(ham_nodes)} Hamiltonians, {len(art_nodes)} artifacts")
-    return ham_nodes, art_nodes, art_data_sources
+    print(f"  Prepared {len(ent_nodes)} entities, {len(art_nodes)} artifacts")
+    return ent_nodes, art_nodes, art_data_sources
 
 
-def bulk_register(engine, ham_nodes, art_nodes, art_data_sources):
+def bulk_register(engine, ent_nodes, art_nodes, art_data_sources):
     """Bulk insert all data with trigger disable/rebuild."""
 
     start_time = time.time()
@@ -294,32 +294,32 @@ def bulk_register(engine, ham_nodes, art_nodes, art_data_sources):
         print("Step 1: Disabling closure table trigger...")
         conn.execute(text("DROP TRIGGER IF EXISTS update_closure_table_when_inserting"))
 
-        # Step 2: Insert Hamiltonian nodes
-        print(f"Step 2: Inserting {len(ham_nodes)} Hamiltonian nodes...")
-        ham_id_map = {}  # huid -> node_id
+        # Step 2: Insert entity nodes
+        print(f"Step 2: Inserting {len(ent_nodes)} entity nodes...")
+        ent_id_map = {}  # uid -> node_id
 
-        for ham in ham_nodes:
+        for ent in ent_nodes:
             result = conn.execute(
                 text("""
                     INSERT INTO nodes (parent, key, structure_family, metadata, specs, access_blob)
                     VALUES (0, :key, :structure_family, :metadata, :specs, :access_blob)
                 """),
                 {
-                    "key": ham["key"],
-                    "structure_family": ham["structure_family"],
-                    "metadata": json.dumps(ham["metadata"]),
-                    "specs": json.dumps(ham["specs"]),
-                    "access_blob": json.dumps(ham["access_blob"]),
+                    "key": ent["key"],
+                    "structure_family": ent["structure_family"],
+                    "metadata": json.dumps(ent["metadata"]),
+                    "specs": json.dumps(ent["specs"]),
+                    "access_blob": json.dumps(ent["access_blob"]),
                 }
             )
-            ham_id_map[ham["huid"]] = result.lastrowid
+            ent_id_map[ent["uid"]] = result.lastrowid
 
         # Step 3: Insert artifact nodes
         print(f"Step 3: Inserting {len(art_nodes)} artifact nodes...")
-        art_id_map = {}  # (huid, art_key) -> node_id
+        art_id_map = {}  # (uid, art_key) -> node_id
 
         for art in art_nodes:
-            parent_id = ham_id_map[art["parent_huid"]]
+            parent_id = ent_id_map[art["parent_uid"]]
             result = conn.execute(
                 text("""
                     INSERT INTO nodes (parent, key, structure_family, metadata, specs, access_blob)
@@ -334,7 +334,7 @@ def bulk_register(engine, ham_nodes, art_nodes, art_data_sources):
                     "access_blob": json.dumps(art["access_blob"]),
                 }
             )
-            art_id_map[(art["parent_huid"], art["key"])] = result.lastrowid
+            art_id_map[(art["parent_uid"], art["key"])] = result.lastrowid
 
         # Step 4: Insert structures (deduplicated)
         print("Step 4: Inserting structures...")
@@ -376,10 +376,10 @@ def bulk_register(engine, ham_nodes, art_nodes, art_data_sources):
 
         # Step 6: Insert data_sources
         print("Step 6: Inserting data sources...")
-        ds_id_map = {}  # (huid, art_key) -> data_source_id
+        ds_id_map = {}  # (uid, art_key) -> data_source_id
 
         for ds in art_data_sources:
-            node_id = art_id_map[(ds["parent_huid"], ds["art_key"])]
+            node_id = art_id_map[(ds["parent_uid"], ds["art_key"])]
             result = conn.execute(
                 text("""
                     INSERT INTO data_sources (node_id, structure_id, mimetype, parameters, management, structure_family)
@@ -394,12 +394,12 @@ def bulk_register(engine, ham_nodes, art_nodes, art_data_sources):
                     "structure_family": "array",
                 }
             )
-            ds_id_map[(ds["parent_huid"], ds["art_key"])] = result.lastrowid
+            ds_id_map[(ds["parent_uid"], ds["art_key"])] = result.lastrowid
 
         # Step 7: Insert data_source_asset_association
         print("Step 7: Inserting data source asset associations...")
         for ds in art_data_sources:
-            ds_id = ds_id_map[(ds["parent_huid"], ds["art_key"])]
+            ds_id = ds_id_map[(ds["parent_uid"], ds["art_key"])]
             data_uri = f"file://localhost{ds['h5_path']}"
             asset_id = asset_id_map[data_uri]
             conn.execute(
@@ -477,16 +477,16 @@ def verify_registration(db_path):
         print(f"  assets:         {assets}")
         print(f"  associations:   {associations}")
 
-        # Sample a Hamiltonian
-        ham = conn.execute(text("""
+        # Sample an entity
+        ent = conn.execute(text("""
             SELECT id, key, metadata FROM nodes
             WHERE parent = 0 AND key != ''
             LIMIT 1
         """)).fetchone()
 
-        if ham:
-            print(f"\nSample Hamiltonian: {ham[1]}")
-            meta = json.loads(ham[2])
+        if ent:
+            print(f"\nSample entity: {ent[1]}")
+            meta = json.loads(ent[2])
 
             # Show first few metadata keys (generic -- no hardcoded param names)
             meta_keys = [k for k in meta if not k.startswith(("path_", "dataset_", "index_"))]
@@ -495,7 +495,7 @@ def verify_registration(db_path):
             # Count children
             children = conn.execute(text("""
                 SELECT COUNT(*) FROM nodes WHERE parent = :parent_id
-            """), {"parent_id": ham[0]}).fetchone()[0]
+            """), {"parent_id": ent[0]}).fetchone()[0]
             print(f"  Children: {children}")
 
             # Check locator keys in metadata
@@ -515,7 +515,7 @@ def verify_registration(db_path):
    uv run --with 'tiled[server]' --with pandas python -c "
    from tiled.client import from_uri
    client = from_uri('http://localhost:8005', api_key='secret')
-   print(f'Hamiltonians: {len(client)}')
+   print(f'Entities: {len(client)}')
    h = client[list(client)[0]]
    print(f'Artifacts: {list(h)}')
    print(f'Data shape: {h[list(h.keys())[0]].read().shape}')
@@ -526,27 +526,27 @@ def verify_registration(db_path):
 def parse_args():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Bulk register Hamiltonians to Tiled catalog using SQLAlchemy.",
+        description="Bulk register entities to Tiled catalog using SQLAlchemy.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s                        # Register 10 Hamiltonians (default)
-  %(prog)s -n 1000                # Register 1000 Hamiltonians
+  %(prog)s                        # Register 10 entities (default)
+  %(prog)s -n 1000                # Register 1000 entities
   %(prog)s -n 10000 -o bulk.db    # Register all to bulk.db
   %(prog)s -n 100 --force         # Overwrite without prompting
 
 Environment variables (used as fallbacks):
-  VDP_MAX_HAMILTONIANS   Number of Hamiltonians (default: from config)
+  MAX_ENTITIES           Number of entities (default: from config)
   CATALOG_DB             Database filename (default: catalog.db)
 """
     )
 
     parser.add_argument(
-        "-n", "--max-hamiltonians",
+        "-n", "--max-entities",
         type=int,
         default=None,
         metavar="NUM",
-        help="Number of Hamiltonians to register (default: 10 or VDP_MAX_HAMILTONIANS)"
+        help="Number of entities to register (default: 10 or MAX_ENTITIES)"
     )
 
     parser.add_argument(
@@ -583,15 +583,15 @@ def main():
     else:
         db_path = get_catalog_db_path()
 
-    # Determine max Hamiltonians (CLI > env var > config default)
-    if args.max_hamiltonians is not None:
-        max_hamiltonians = args.max_hamiltonians
+    # Determine max entities (CLI > env var > config default)
+    if args.max_entities is not None:
+        max_entities = args.max_entities
     else:
-        max_hamiltonians = get_max_hamiltonians()
+        max_entities = get_max_entities()
 
-    print(f"Database:         {db_path}")
-    print(f"Data dir:         {get_base_dir()}")
-    print(f"Max Hamiltonians: {max_hamiltonians}")
+    print(f"Database:       {db_path}")
+    print(f"Data dir:       {get_base_dir()}")
+    print(f"Max entities:   {max_entities}")
     print()
 
     # Check if database exists and handle --force
@@ -607,19 +607,19 @@ def main():
     engine = init_database(db_path)
 
     # Load manifests
-    ham_df, art_df = load_manifests()
+    ent_df, art_df = load_manifests()
 
     # Prepare data
-    ham_nodes, art_nodes, art_data_sources = prepare_node_data(
-        ham_df, art_df, max_hamiltonians
+    ent_nodes, art_nodes, art_data_sources = prepare_node_data(
+        ent_df, art_df, max_entities
     )
 
     # Bulk register
     print("\nStarting bulk registration...")
-    elapsed = bulk_register(engine, ham_nodes, art_nodes, art_data_sources)
+    elapsed = bulk_register(engine, ent_nodes, art_nodes, art_data_sources)
 
     # Calculate rate
-    total_nodes = len(ham_nodes) + len(art_nodes) + 1  # +1 for root
+    total_nodes = len(ent_nodes) + len(art_nodes) + 1  # +1 for root
     rate = total_nodes / elapsed if elapsed > 0 else 0
     print(f"Rate: {rate:.0f} nodes/sec")
 

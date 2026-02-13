@@ -59,7 +59,7 @@ def temp_catalog_db(tmp_path):
 def small_manifest(tiled_client):
     """Load a small manifest for fast integration tests.
 
-    Returns first 5 Hamiltonians' manifest data.
+    Returns first 5 entities' manifest data.
     """
     from broker.query_manifest import query_manifest
 

@@ -14,7 +14,7 @@ Dataset config format (YAML):
     generator: gen_vdp_manifest
     base_dir: /path/to/data
 
-The generator module must expose: generate(output_dir, n_hamiltonians) -> (ham_df, art_df)
+The generator module must expose: generate(output_dir, n_entities) -> (ent_df, art_df)
 """
 
 import sys
@@ -36,7 +36,7 @@ def load_config(config_path):
         return yaml.load(f)
 
 
-def generate_one(config_path, manifests_dir, n_hamiltonians):
+def generate_one(config_path, manifests_dir, n_entities):
     """Generate manifests for one dataset config."""
     config = load_config(config_path)
     name = Path(config_path).stem
@@ -46,15 +46,15 @@ def generate_one(config_path, manifests_dir, n_hamiltonians):
     print(f"\n--- Generating {label} ({name}) ---")
 
     module = importlib.import_module(generator_module)
-    ham_df, art_df = module.generate(str(manifests_dir), n_hamiltonians=n_hamiltonians)
+    ent_df, art_df = module.generate(str(manifests_dir), n_entities=n_entities)
 
-    return ham_df, art_df
+    return ent_df, art_df
 
 
 def main():
     parser = argparse.ArgumentParser(description="Generate manifests from dataset configs.")
     parser.add_argument("configs", nargs="+", help="Dataset config YAML files")
-    parser.add_argument("-n", type=int, default=10, help="Hamiltonians per dataset (default: 10)")
+    parser.add_argument("-n", type=int, default=10, help="Entities per dataset (default: 10)")
     args = parser.parse_args()
 
     manifests_dir = Path("manifests")
@@ -64,7 +64,7 @@ def main():
     print("Manifest Generation")
     print("=" * 50)
     print(f"Configs: {args.configs}")
-    print(f"Hamiltonians per dataset: {args.n}")
+    print(f"Entities per dataset: {args.n}")
     print(f"Output: {manifests_dir.resolve()}")
 
     for config_path in args.configs:

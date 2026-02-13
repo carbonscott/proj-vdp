@@ -96,8 +96,8 @@ def _(API_KEY, TILED_URL, mo):
 
     mo.md(f"""**Connected to VDP server at `{TILED_URL}`.**
 
-    - Full catalog: **{len(client)}** Hamiltonians
-    - After query (`Ja > 0.5`, `Dc < -0.5`): **{len(subset)}** Hamiltonians
+    - Full catalog: **{len(client)}** entities
+    - After query (`Ja > 0.5`, `Dc < -0.5`): **{len(subset)}** entities
 
     ### What This Query Selects
 
@@ -119,7 +119,7 @@ def _(mo):
     mo.md(r"""
     ## Browse Hierarchical Structure
 
-    Each Hamiltonian is a **container** with:
+    Each entity is a **container** with:
     - **Metadata**: Physics parameters (Ja, Jb, Jc, Dc) + artifact paths
     - **Children**: Computed observables accessible via Tiled adapters
 
@@ -137,12 +137,12 @@ def _(mo):
 
 @app.cell
 def _(mo, subset):
-    # Get first Hamiltonian container from the filtered subset
-    h_keys = list(subset.keys())[:5]
-    h_key = h_keys[0] if h_keys else None
+    # Get first entity container from the filtered subset
+    ent_keys = list(subset.keys())[:5]
+    ent_key = ent_keys[0] if ent_keys else None
 
-    if h_key:
-        h = subset[h_key]
+    if ent_key:
+        h = subset[ent_key]
         children = list(h.keys())
 
         # Physics parameters
@@ -163,7 +163,7 @@ def _(mo, subset):
         ])
 
         _output = mo.md(f"""
-    ### Container: `{h_key}`
+    ### Container: `{ent_key}`
 
     **Physics Parameters (Metadata):**
 
@@ -185,7 +185,7 @@ def _(mo, subset):
         children = []
         physics_keys = []
         path_keys = []
-        _output = mo.md("No Hamiltonians found. Run `register_catalog.py` first.")
+        _output = mo.md("No entities found. Run `register_catalog.py` first.")
 
     _output
     return
@@ -278,7 +278,7 @@ def _(AXIS, HMAX_T, mo, np, subset, time):
         Theta_list = []
 
         # Use .items() to iterate all items (not paginated like .keys())
-        for h_key, h in tiled_client.items():
+        for ent_key, h in tiled_client.items():
             if artifact_key not in h.keys():
                 continue
 
@@ -423,17 +423,17 @@ def _(np):
             self.client = tiled_client
             self.artifact_key = artifact_key
             # Cache keys that have the requested artifact
-            self.h_keys = [
+            self.ent_keys = [
                 k for k, h in tiled_client.items()
                 if artifact_key in h.keys()
             ]
 
         def __len__(self):
-            return len(self.h_keys)
+            return len(self.ent_keys)
 
         def __getitem__(self, idx):
-            h_key = self.h_keys[idx]
-            h = self.client[h_key]
+            ent_key = self.ent_keys[idx]
+            h = self.client[ent_key]
 
             # Load via Tiled adapter
             data = h[self.artifact_key][:]
@@ -467,7 +467,7 @@ def _(AXIS, BATCH_SIZE, DataLoader, HMAX_T, VDPDataset, mo, subset, time):
     mo.md(f"""
     ### DataLoader Demo
 
-    **Dataset size:** {len(dataset)} Hamiltonians with `{artifact_key}`
+    **Dataset size:** {len(dataset)} entities with `{artifact_key}`
     **Batch size:** {BATCH_SIZE}
 
     **First batch loaded in {load_time_dl:.1f} ms:**
@@ -554,7 +554,7 @@ def _(mo):
     │  Sunny.jl       │ ───► │  VDP Catalog    │ ───► │  ML Training    │
     │  (simulation)   │      │  (Tiled)        │      │  (PyTorch)      │
     └─────────────────┘      └─────────────────┘      └─────────────────┘
-     10K Hamiltonians         Query by physics         Inverse solver
+     10K entities             Query by physics         Inverse solver
      110K artifacts           Sub-ms metadata          M(H) → (Ja,Jb,Jc,Dc)
     ```
 
