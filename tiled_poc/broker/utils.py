@@ -4,7 +4,47 @@ Shared Utilities.
 Common functions used across registration scripts.
 """
 
+import os
+
+import h5py
+import numpy as np
+import pandas as pd
+
 from .config import get_tiled_url, get_api_key
+
+
+# Standard columns in the artifact manifest that are NOT stored as metadata.
+# Everything else becomes artifact-level metadata dynamically.
+ARTIFACT_STANDARD_COLS = {"huid", "type", "file", "dataset", "index"}
+
+
+def to_json_safe(value):
+    """Convert a value to a JSON-serializable type."""
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating,)):
+        return float(value)
+    if isinstance(value, (np.ndarray,)):
+        return value.tolist()
+    if pd.isna(value):
+        return None
+    return value
+
+
+def get_artifact_shape(base_dir, file_path, dataset_path, index=None, _cache={}):
+    """Read artifact shape from HDF5, with caching by dataset path.
+
+    Caches by dataset_path to avoid re-opening files for artifacts
+    that share the same HDF5 internal structure.
+    """
+    if dataset_path not in _cache:
+        full_path = os.path.join(base_dir, file_path)
+        with h5py.File(full_path, "r") as f:
+            _cache[dataset_path] = f[dataset_path].shape
+    full_shape = _cache[dataset_path]
+    if index is not None:
+        return list(full_shape[1:])  # Skip batch dimension
+    return list(full_shape)
 
 
 def check_server():

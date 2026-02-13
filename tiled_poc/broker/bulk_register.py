@@ -61,8 +61,6 @@ import hashlib
 import argparse
 from pathlib import Path
 
-import h5py
-import numpy as np
 import pandas as pd
 import canonicaljson
 from sqlalchemy import create_engine, text
@@ -74,18 +72,18 @@ from .config import (
     get_max_hamiltonians,
     get_catalog_db_path,
 )
-from .utils import make_artifact_key
+from .utils import (
+    make_artifact_key,
+    to_json_safe,
+    get_artifact_shape,
+    ARTIFACT_STANDARD_COLS,
+)
 
 
 def compute_structure_id(structure):
     """Compute HEX digest of MD5 hash of RFC 8785 canonical JSON."""
     canonical = canonicaljson.encode_canonical_json(structure)
     return hashlib.md5(canonical).hexdigest()
-
-
-# Standard columns in the artifact manifest that are NOT stored as metadata.
-# Everything else becomes artifact-level metadata dynamically.
-ARTIFACT_STANDARD_COLS = {"huid", "type", "file", "dataset", "index"}
 
 
 # SQLite trigger SQL (from Tiled orm.py)
@@ -152,35 +150,6 @@ def load_manifests():
     return ham_df, art_df
 
 
-def _to_json_safe(value):
-    """Convert a value to a JSON-serializable type."""
-    if isinstance(value, (np.integer,)):
-        return int(value)
-    if isinstance(value, (np.floating,)):
-        return float(value)
-    if isinstance(value, (np.ndarray,)):
-        return value.tolist()
-    if pd.isna(value):
-        return None
-    return value
-
-
-def _get_artifact_shape(base_dir, file_path, dataset_path, index=None, _cache={}):
-    """Read artifact shape from HDF5, with caching by dataset path.
-
-    Caches by dataset_path to avoid re-opening files for artifacts
-    that share the same HDF5 internal structure.
-    """
-    if dataset_path not in _cache:
-        full_path = os.path.join(base_dir, file_path)
-        with h5py.File(full_path, "r") as f:
-            _cache[dataset_path] = f[dataset_path].shape
-    full_shape = _cache[dataset_path]
-    if index is not None:
-        return list(full_shape[1:])  # Skip batch dimension
-    return list(full_shape)
-
-
 def prepare_node_data(ham_df, art_df, max_hamiltonians, base_dir=None):
     """Prepare all node data for bulk insert.
 
@@ -218,7 +187,7 @@ def prepare_node_data(ham_df, art_df, max_hamiltonians, base_dir=None):
         # Build Hamiltonian metadata dynamically from ALL manifest columns
         metadata = {}
         for col in ham_df.columns:
-            metadata[col] = _to_json_safe(ham_row[col])
+            metadata[col] = to_json_safe(ham_row[col])
 
         # Attach artifact locators to Hamiltonian metadata (for Mode A access)
         artifacts = None
@@ -252,7 +221,7 @@ def prepare_node_data(ham_df, art_df, max_hamiltonians, base_dir=None):
                     index = int(art_row["index"])
 
                 # Get shape from HDF5 (cached by dataset path)
-                data_shape = _get_artifact_shape(
+                data_shape = get_artifact_shape(
                     base_dir, h5_rel_path, dataset_path, index
                 )
 
@@ -264,7 +233,7 @@ def prepare_node_data(ham_df, art_df, max_hamiltonians, base_dir=None):
                 }
                 for col in art_df.columns:
                     if col not in ARTIFACT_STANDARD_COLS:
-                        art_metadata[col] = _to_json_safe(art_row[col])
+                        art_metadata[col] = to_json_safe(art_row[col])
 
                 # Build structure for this artifact
                 chunks = [[dim] for dim in data_shape]

@@ -51,13 +51,14 @@ def register_dataset(engine, ham_df, art_df, base_dir, label):
         base_dir: Base directory for resolving relative file paths.
         label: Dataset name (for logging).
     """
-    from .bulk_register import prepare_node_data, bulk_register, _get_artifact_shape
+    from .bulk_register import prepare_node_data, bulk_register
+    from .utils import get_artifact_shape
 
     n = len(ham_df)
     print(f"\n--- Registering {label} ({n} Hamiltonians) ---")
 
     # Clear shape cache to avoid cross-dataset collisions
-    _get_artifact_shape.__defaults__[1].clear()
+    get_artifact_shape.__defaults__[-1].clear()
 
     ham_nodes, art_nodes, art_data_sources = prepare_node_data(
         ham_df, art_df, max_hamiltonians=n, base_dir=base_dir,
