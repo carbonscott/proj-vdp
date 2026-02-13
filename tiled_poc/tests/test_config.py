@@ -8,41 +8,78 @@
 """
 Unit tests for config module.
 
-These tests verify configuration loading and accessor functions.
+Tests verify configuration loading with the new manifest-based config format.
 No Tiled server required.
 
 Run with:
-    uv run --with pytest pytest tests/test_config.py -v
+    uv run --with pytest --with 'ruamel.yaml' pytest tests/test_config.py -v
 """
 
 import os
 import sys
+import importlib
 from pathlib import Path
 
 import pytest
 
-# Add scripts directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+# Add tiled_poc directory to path for broker package imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+
+@pytest.fixture(autouse=True)
+def reset_config_cache():
+    """Reset config module cache before each test."""
+    import broker.config as config
+    config._config = None
+    yield
+    config._config = None
+
+
+class TestLoadConfig:
+    """Tests for load_config()."""
+
+    def test_loads_broker_section(self):
+        from broker.config import load_config
+        cfg = load_config()
+        assert isinstance(cfg, dict)
+        assert "data_dir" in cfg
+        assert "service_dir" in cfg
+
+    def test_has_manifests_section(self):
+        from broker.config import load_config
+        cfg = load_config()
+        assert "manifests" in cfg
+        assert "hamiltonians" in cfg["manifests"]
+        assert "artifacts" in cfg["manifests"]
+
+    def test_no_dataset_paths(self):
+        """The generic config should NOT have hardcoded dataset_paths."""
+        from broker.config import load_config
+        cfg = load_config()
+        assert "dataset_paths" not in cfg
+
+    def test_no_default_shapes(self):
+        """The generic config should NOT have hardcoded default_shapes."""
+        from broker.config import load_config
+        cfg = load_config()
+        assert "default_shapes" not in cfg
 
 
 class TestGetBaseDir:
     """Tests for get_base_dir()."""
 
     def test_returns_string(self):
-        from config import get_base_dir
-
+        from broker.config import get_base_dir
         base = get_base_dir()
         assert isinstance(base, str)
 
     def test_contains_schema_version(self):
-        from config import get_base_dir
-
+        from broker.config import get_base_dir
         base = get_base_dir()
         assert "schema_v1" in base
 
     def test_contains_data_path(self):
-        from config import get_base_dir
-
+        from broker.config import get_base_dir
         base = get_base_dir()
         assert "/data/" in base
 
@@ -51,58 +88,55 @@ class TestGetLatestManifest:
     """Tests for get_latest_manifest()."""
 
     def test_finds_hamiltonians_manifest(self):
-        from config import get_latest_manifest
-
+        from broker.config import get_latest_manifest
         path = get_latest_manifest("hamiltonians")
         assert path.endswith(".parquet")
         assert os.path.exists(path)
 
     def test_finds_artifacts_manifest(self):
-        from config import get_latest_manifest
-
+        from broker.config import get_latest_manifest
         path = get_latest_manifest("artifacts")
         assert path.endswith(".parquet")
         assert os.path.exists(path)
 
     def test_raises_for_invalid_prefix(self):
-        from config import get_latest_manifest
-
+        from broker.config import get_latest_manifest
         with pytest.raises(FileNotFoundError):
             get_latest_manifest("nonexistent_prefix")
+
+    def test_uses_configured_pattern(self):
+        """Manifest pattern comes from config.yml manifests section."""
+        from broker.config import get_config
+        cfg = get_config()
+        assert "manifests" in cfg
+        # The configured pattern should be used by get_latest_manifest
+        assert "hamiltonians" in cfg["manifests"]
 
 
 class TestGetMaxHamiltonians:
     """Tests for get_max_hamiltonians()."""
 
     def test_returns_integer(self):
-        from config import get_max_hamiltonians
-
+        from broker.config import get_max_hamiltonians
         result = get_max_hamiltonians()
         assert isinstance(result, int)
 
     def test_default_is_positive(self):
-        from config import get_max_hamiltonians
-
+        from broker.config import get_max_hamiltonians
         result = get_max_hamiltonians()
         assert result > 0
 
     def test_respects_env_variable(self):
         """Test that VDP_MAX_HAMILTONIANS environment variable is respected."""
-        import importlib
-        import config
+        import broker.config as config
 
-        # Set env var
         os.environ["VDP_MAX_HAMILTONIANS"] = "42"
-
-        # Reload config to pick up new env var
-        # Reset the module-level cache first
         config._config = None
         importlib.reload(config)
 
         result = config.get_max_hamiltonians()
         assert result == 42
 
-        # Cleanup
         del os.environ["VDP_MAX_HAMILTONIANS"]
         config._config = None
         importlib.reload(config)
@@ -112,33 +146,23 @@ class TestGetTiledUrl:
     """Tests for get_tiled_url()."""
 
     def test_returns_string(self):
-        from config import get_tiled_url
-
+        from broker.config import get_tiled_url
         url = get_tiled_url()
         assert isinstance(url, str)
 
     def test_default_is_localhost(self):
-        from config import get_tiled_url
-
-        # Clear env var if set
+        from broker.config import get_tiled_url
         old_val = os.environ.pop("TILED_URL", None)
-
         url = get_tiled_url()
         assert "localhost" in url
-
-        # Restore
         if old_val:
             os.environ["TILED_URL"] = old_val
 
     def test_respects_env_variable(self):
-        from config import get_tiled_url
-
+        from broker.config import get_tiled_url
         os.environ["TILED_URL"] = "http://test:9999"
-
         url = get_tiled_url()
         assert url == "http://test:9999"
-
-        # Cleanup
         del os.environ["TILED_URL"]
 
 
@@ -146,20 +170,14 @@ class TestGetApiKey:
     """Tests for get_api_key()."""
 
     def test_returns_string(self):
-        from config import get_api_key
-
+        from broker.config import get_api_key
         key = get_api_key()
         assert isinstance(key, str)
 
     def test_default_is_secret(self):
-        from config import get_api_key
-
-        # Clear env var if set
+        from broker.config import get_api_key
         old_val = os.environ.pop("TILED_API_KEY", None)
-
         key = get_api_key()
         assert key == "secret"
-
-        # Restore
         if old_val:
             os.environ["TILED_API_KEY"] = old_val

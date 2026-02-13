@@ -31,10 +31,10 @@ import sys
 import time
 from pathlib import Path
 
-# Add scripts directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+# Add tiled_poc directory to path for broker package imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import get_tiled_url, get_api_key, get_base_dir, get_service_dir
+from broker.config import get_tiled_url, get_api_key, get_base_dir, get_service_dir
 
 
 def demo_mode_a_expert(client):
@@ -46,7 +46,7 @@ def demo_mode_a_expert(client):
     - Users who want to handle file I/O themselves
     - Maximum performance (direct HDF5, no HTTP overhead)
     """
-    from query_manifest import query_manifest, load_from_manifest, build_mh_dataset
+    from broker.query_manifest import query_manifest, load_from_manifest, build_mh_dataset
 
     print("=" * 60)
     print("MODE A: Expert Path-Based Access")

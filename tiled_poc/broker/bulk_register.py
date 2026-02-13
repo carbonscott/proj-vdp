@@ -13,10 +13,13 @@
 # ]
 # ///
 """
-VDP Bulk Registration with SQLAlchemy.
+Generic Bulk Registration with SQLAlchemy.
 
 Bypasses Tiled HTTP layer for maximum bulk insert performance.
 Uses direct SQLAlchemy with trigger disable/rebuild pattern.
+
+Dataset-agnostic: reads all metadata columns dynamically from manifests.
+The manifest is the contract -- no hardcoded parameter names or artifact types.
 
 Key optimizations:
 - Single database transaction for all inserts
@@ -40,7 +43,7 @@ Usage:
     # Register specific number of Hamiltonians
     python bulk_register.py -n 1000
 
-    # Register all 10K Hamiltonians to a specific database
+    # Register all Hamiltonians to a specific database
     python bulk_register.py -n 10000 -o catalog-bulk.db
 
     # Force overwrite without prompting
@@ -58,27 +61,31 @@ import hashlib
 import argparse
 from pathlib import Path
 
+import h5py
 import numpy as np
 import pandas as pd
 import canonicaljson
 from sqlalchemy import create_engine, text
 
 # Import from shared helpers
-from config import (
+from .config import (
     get_base_dir,
     get_latest_manifest,
     get_max_hamiltonians,
-    get_dataset_paths,
-    get_default_shapes,
     get_catalog_db_path,
 )
-from utils import make_artifact_key
+from .utils import make_artifact_key
 
 
 def compute_structure_id(structure):
     """Compute HEX digest of MD5 hash of RFC 8785 canonical JSON."""
     canonical = canonicaljson.encode_canonical_json(structure)
     return hashlib.md5(canonical).hexdigest()
+
+
+# Standard columns in the artifact manifest that are NOT stored as metadata.
+# Everything else becomes artifact-level metadata dynamically.
+ARTIFACT_STANDARD_COLS = {"huid", "type", "file", "dataset", "index"}
 
 
 # SQLite trigger SQL (from Tiled orm.py)
@@ -145,17 +152,55 @@ def load_manifests():
     return ham_df, art_df
 
 
-def prepare_node_data(ham_df, art_df, max_hamiltonians):
+def _to_json_safe(value):
+    """Convert a value to a JSON-serializable type."""
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating,)):
+        return float(value)
+    if isinstance(value, (np.ndarray,)):
+        return value.tolist()
+    if pd.isna(value):
+        return None
+    return value
+
+
+def _get_artifact_shape(base_dir, file_path, dataset_path, index=None, _cache={}):
+    """Read artifact shape from HDF5, with caching by dataset path.
+
+    Caches by dataset_path to avoid re-opening files for artifacts
+    that share the same HDF5 internal structure.
+    """
+    if dataset_path not in _cache:
+        full_path = os.path.join(base_dir, file_path)
+        with h5py.File(full_path, "r") as f:
+            _cache[dataset_path] = f[dataset_path].shape
+    full_shape = _cache[dataset_path]
+    if index is not None:
+        return list(full_shape[1:])  # Skip batch dimension
+    return list(full_shape)
+
+
+def prepare_node_data(ham_df, art_df, max_hamiltonians, base_dir=None):
     """Prepare all node data for bulk insert.
+
+    Reads all metadata columns dynamically from manifests -- no hardcoded
+    parameter names or artifact types.
+
+    Args:
+        ham_df: Hamiltonian manifest DataFrame.
+        art_df: Artifact manifest DataFrame.
+        max_hamiltonians: Maximum number of Hamiltonians to process.
+        base_dir: Base directory for resolving relative file paths.
+            Defaults to get_base_dir().
 
     Returns:
         ham_nodes: List of Hamiltonian node dicts
         art_nodes: List of artifact node dicts (with placeholder parent)
         art_data_sources: List of data source info for artifacts
     """
-    base_dir = get_base_dir()
-    dataset_paths = get_dataset_paths()
-    default_shapes = get_default_shapes()
+    if base_dir is None:
+        base_dir = get_base_dir()
 
     ham_subset = ham_df.head(max_hamiltonians)
     art_grouped = art_df.groupby("huid")
@@ -170,24 +215,21 @@ def prepare_node_data(ham_df, art_df, max_hamiltonians):
         huid = str(ham_row["huid"])
         h_key = f"H_{huid[:8]}"
 
-        # Build Hamiltonian metadata with paths
-        metadata = {
-            "huid": huid,
-            "Ja_meV": float(ham_row["Ja_meV"]),
-            "Jb_meV": float(ham_row["Jb_meV"]),
-            "Jc_meV": float(ham_row["Jc_meV"]),
-            "Dc_meV": float(ham_row["Dc_meV"]),
-            "spin_s": float(ham_row.get("spin_s", 2.5)),
-            "g_factor": float(ham_row.get("g_factor", 2.0)),
-        }
+        # Build Hamiltonian metadata dynamically from ALL manifest columns
+        metadata = {}
+        for col in ham_df.columns:
+            metadata[col] = _to_json_safe(ham_row[col])
 
-        # Add artifact paths to metadata
+        # Attach artifact locators to Hamiltonian metadata (for Mode A access)
         artifacts = None
         if huid in art_grouped.groups:
             artifacts = art_grouped.get_group(huid)
             for _, art_row in artifacts.iterrows():
-                path_key = make_artifact_key(art_row, prefix="path_")
-                metadata[path_key] = art_row["path_rel"]
+                art_key = make_artifact_key(art_row)
+                metadata[f"path_{art_key}"] = art_row["file"]
+                metadata[f"dataset_{art_key}"] = art_row["dataset"]
+                if "index" in art_row.index and pd.notna(art_row.get("index")):
+                    metadata[f"index_{art_key}"] = int(art_row["index"])
 
         ham_nodes.append({
             "key": h_key,
@@ -202,38 +244,29 @@ def prepare_node_data(ham_df, art_df, max_hamiltonians):
         if artifacts is not None:
             for _, art_row in artifacts.iterrows():
                 art_key = make_artifact_key(art_row)
-                artifact_type = art_row["type"]
-                h5_rel_path = art_row["path_rel"]
+                h5_rel_path = art_row["file"]
                 h5_full_path = os.path.join(base_dir, h5_rel_path)
+                dataset_path = art_row["dataset"]
+                index = None
+                if "index" in art_row.index and pd.notna(art_row.get("index")):
+                    index = int(art_row["index"])
 
-                # Get shape
-                shape_default = default_shapes.get(artifact_type, [1])
-                if artifact_type == "mh_curve":
-                    data_shape = [int(art_row.get("n_hpts", shape_default[0]))]
-                elif artifact_type == "gs_state":
-                    data_shape = list(shape_default)
-                elif artifact_type == "ins_powder":
-                    data_shape = [
-                        int(art_row.get("nq", shape_default[0])),
-                        int(art_row.get("nw", shape_default[1])),
-                    ]
-                else:
-                    data_shape = list(shape_default)
+                # Get shape from HDF5 (cached by dataset path)
+                data_shape = _get_artifact_shape(
+                    base_dir, h5_rel_path, dataset_path, index
+                )
 
-                # Build artifact metadata
+                # Build artifact metadata dynamically from non-standard columns
                 art_metadata = {
-                    "type": artifact_type,
+                    "type": art_row["type"],
                     "shape": data_shape,
                     "dtype": "float64",
                 }
-                if artifact_type == "mh_curve":
-                    art_metadata["axis"] = art_row["axis"]
-                    art_metadata["Hmax_T"] = float(art_row["Hmax_T"])
-                elif artifact_type == "ins_powder":
-                    art_metadata["Ei_meV"] = float(art_row["Ei_meV"])
+                for col in art_df.columns:
+                    if col not in ARTIFACT_STANDARD_COLS:
+                        art_metadata[col] = _to_json_safe(art_row[col])
 
                 # Build structure for this artifact
-                # Chunks must be list of lists, one per dimension
                 chunks = [[dim] for dim in data_shape]
                 structure = {
                     "data_type": {
@@ -247,6 +280,11 @@ def prepare_node_data(ham_df, art_df, max_hamiltonians):
                     "resizable": False,
                 }
                 structure_id = compute_structure_id(structure)
+
+                # Build data source parameters
+                ds_params = {"dataset": dataset_path}
+                if index is not None:
+                    ds_params["index"] = index
 
                 art_nodes.append({
                     "key": art_key,
@@ -263,7 +301,8 @@ def prepare_node_data(ham_df, art_df, max_hamiltonians):
                     "structure_id": structure_id,
                     "structure": structure,
                     "h5_path": h5_full_path,
-                    "dataset_path": dataset_paths.get(artifact_type),
+                    "dataset_path": dataset_path,
+                    "parameters": ds_params,
                 })
 
     print(f"  Prepared {len(ham_nodes)} Hamiltonians, {len(art_nodes)} artifacts")
@@ -375,7 +414,7 @@ def bulk_register(engine, ham_nodes, art_nodes, art_data_sources):
                     "node_id": node_id,
                     "structure_id": ds["structure_id"],
                     "mimetype": "application/x-hdf5",
-                    "parameters": json.dumps({"dataset": ds["dataset_path"]}),
+                    "parameters": json.dumps(ds["parameters"]),
                     "management": "external",
                     "structure_family": "array",
                 }
@@ -473,8 +512,10 @@ def verify_registration(db_path):
         if ham:
             print(f"\nSample Hamiltonian: {ham[1]}")
             meta = json.loads(ham[2])
-            print(f"  Ja_meV: {meta.get('Ja_meV')}")
-            print(f"  Jb_meV: {meta.get('Jb_meV')}")
+
+            # Show first few metadata keys (generic -- no hardcoded param names)
+            meta_keys = [k for k in meta if not k.startswith(("path_", "dataset_", "index_"))]
+            print(f"  Metadata keys: {meta_keys}")
 
             # Count children
             children = conn.execute(text("""
@@ -482,9 +523,11 @@ def verify_registration(db_path):
             """), {"parent_id": ham[0]}).fetchone()[0]
             print(f"  Children: {children}")
 
-            # Check path keys in metadata
-            path_keys = [k for k in meta.keys() if k.startswith("path_")]
-            print(f"  Path keys: {len(path_keys)}")
+            # Check locator keys in metadata
+            path_keys = [k for k in meta if k.startswith("path_")]
+            dataset_keys = [k for k in meta if k.startswith("dataset_")]
+            index_keys = [k for k in meta if k.startswith("index_")]
+            print(f"  Locator keys: {len(path_keys)} paths, {len(dataset_keys)} datasets, {len(index_keys)} indices")
 
     print("\n" + "=" * 50)
     print("To test with Tiled server:")
@@ -508,7 +551,7 @@ def verify_registration(db_path):
 def parse_args():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Bulk register VDP Hamiltonians to Tiled catalog using SQLAlchemy.",
+        description="Bulk register Hamiltonians to Tiled catalog using SQLAlchemy.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -552,11 +595,11 @@ def main():
     args = parse_args()
 
     print("=" * 60)
-    print("VDP VDP Bulk Registration (SQLAlchemy + Trigger Rebuild)")
+    print("Generic Bulk Registration (SQLAlchemy + Trigger Rebuild)")
     print("=" * 60)
 
     # Determine database path (CLI > env var > config default)
-    from config import get_service_dir
+    from .config import get_service_dir
 
     if args.output:
         db_path = os.path.join(get_service_dir(), args.output)

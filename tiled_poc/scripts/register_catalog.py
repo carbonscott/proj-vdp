@@ -11,16 +11,14 @@
 # ]
 # ///
 """
-V6 Unified Dual-Mode Registration.
+Generic Unified Dual-Mode Registration.
 
 Registers Hamiltonians with BOTH:
-- Artifact paths in container metadata (for expert path-based access)
+- Artifact locators in container metadata (for expert path-based access)
 - Array children via DataSource adapters (for visualization/chunked access)
 
-Key differences from V4 and V5:
-- V4: Arrays as children, huid in metadata (no paths)
-- V5: Paths in metadata, no children (discovery-only)
-- V6: BOTH paths in metadata AND arrays as children (unified dual-mode)
+Dataset-agnostic: reads all metadata columns dynamically from manifests.
+The manifest is the contract -- no hardcoded parameter names or artifact types.
 
 Usage:
     # Start the Tiled server first:
@@ -38,20 +36,51 @@ import sys
 import time
 from pathlib import Path
 
+# Add tiled_poc directory to path for broker package imports
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import h5py
 import numpy as np
 import pandas as pd
 
-from config import (
+from broker.config import (
     get_base_dir,
     get_latest_manifest,
     get_tiled_url,
     get_api_key,
     get_max_hamiltonians,
-    get_dataset_paths,
-    get_default_shapes,
     get_service_dir,
 )
-from utils import check_server, make_artifact_key
+from broker.utils import check_server, make_artifact_key
+
+
+# Standard columns in the artifact manifest that are NOT stored as metadata.
+ARTIFACT_STANDARD_COLS = {"huid", "type", "file", "dataset", "index"}
+
+
+def _to_json_safe(value):
+    """Convert a value to a JSON-serializable type."""
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating,)):
+        return float(value)
+    if isinstance(value, (np.ndarray,)):
+        return value.tolist()
+    if pd.isna(value):
+        return None
+    return value
+
+
+def _get_artifact_shape(base_dir, file_path, dataset_path, index=None, _cache={}):
+    """Read artifact shape from HDF5, with caching by dataset path."""
+    if dataset_path not in _cache:
+        full_path = os.path.join(base_dir, file_path)
+        with h5py.File(full_path, "r") as f:
+            _cache[dataset_path] = f[dataset_path].shape
+    full_shape = _cache[dataset_path]
+    if index is not None:
+        return tuple(full_shape[1:])
+    return tuple(full_shape)
 
 
 def load_manifests():
@@ -73,39 +102,30 @@ def load_manifests():
     return ham_df, art_df
 
 
-def create_data_source(art_row):
-    """Create a DataSource for an artifact pointing to external HDF5."""
+def create_data_source(art_row, base_dir=None):
+    """Create a DataSource for an artifact pointing to external HDF5.
+
+    Reads dataset path and shape from the manifest and HDF5 file directly.
+    No hardcoded artifact types or shapes.
+    """
     from tiled.structures.core import StructureFamily
     from tiled.structures.array import ArrayStructure
     from tiled.structures.data_source import Asset, DataSource, Management
 
-    base_dir = get_base_dir()
-    dataset_paths = get_dataset_paths()
-    default_shapes = get_default_shapes()
+    if base_dir is None:
+        base_dir = get_base_dir()
 
-    artifact_type = art_row["type"]
-    h5_rel_path = art_row["path_rel"]
+    h5_rel_path = art_row["file"]
     h5_full_path = os.path.join(base_dir, h5_rel_path)
+    dataset_path = art_row["dataset"]
 
-    # Get dataset path
-    dataset_path = dataset_paths.get(artifact_type)
-    if not dataset_path:
-        raise ValueError(f"Unknown artifact type: {artifact_type}")
+    # Determine index for batched files
+    index = None
+    if "index" in art_row.index and pd.notna(art_row.get("index")):
+        index = int(art_row["index"])
 
-    # Get shape from config defaults or row
-    shape_default = default_shapes.get(artifact_type, [1])
-    if artifact_type == "mh_curve":
-        data_shape = (int(art_row.get("n_hpts", shape_default[0])),)
-    elif artifact_type == "gs_state":
-        data_shape = tuple(shape_default)
-    elif artifact_type == "ins_powder":
-        data_shape = (
-            int(art_row.get("nq", shape_default[0])),
-            int(art_row.get("nw", shape_default[1])),
-        )
-    else:
-        data_shape = tuple(shape_default)
-
+    # Get shape from HDF5 (cached by dataset path)
+    data_shape = _get_artifact_shape(base_dir, h5_rel_path, dataset_path, index)
     data_dtype = np.float64
 
     # Create asset pointing to HDF5 file
@@ -120,13 +140,18 @@ def create_data_source(art_row):
         np.empty(data_shape, dtype=data_dtype)
     )
 
+    # Build parameters
+    ds_params = {"dataset": dataset_path}
+    if index is not None:
+        ds_params["index"] = index
+
     # Create data source
     data_source = DataSource(
         mimetype="application/x-hdf5",
         assets=[asset],
         structure_family=StructureFamily.array,
         structure=structure,
-        parameters={"dataset": dataset_path},
+        parameters=ds_params,
         management=Management.external,
     )
 
@@ -134,10 +159,12 @@ def create_data_source(art_row):
 
 
 def register_unified_catalog(client, ham_df, art_df):
-    """Register Hamiltonians with BOTH paths AND array adapters.
+    """Register Hamiltonians with BOTH locators AND array adapters.
 
-    V6 UNIFIED: Combines V4 (adapters) + V5 (paths in metadata).
-    Users choose their access pattern at query time.
+    Unified dual-mode: combines path-based metadata (Mode A) with
+    array children via adapters (Mode B).
+
+    All metadata columns are read dynamically from the manifests.
     """
     from tiled.structures.core import StructureFamily
 
@@ -155,7 +182,7 @@ def register_unified_catalog(client, ham_df, art_df):
 
     # Limit Hamiltonians
     ham_subset = ham_df.head(max_hamiltonians)
-    print(f"Registering {len(ham_subset)} Hamiltonians (unified: paths + adapters)...")
+    print(f"Registering {len(ham_subset)} Hamiltonians (unified: locators + adapters)...")
 
     for i, (_, ham_row) in enumerate(ham_subset.iterrows()):
         huid = str(ham_row["huid"])
@@ -166,51 +193,46 @@ def register_unified_catalog(client, ham_df, art_df):
             skip_count += 1
             continue
 
-        # Build metadata with physics parameters
-        metadata = {
-            "huid": huid,
-            "Ja_meV": float(ham_row["Ja_meV"]),
-            "Jb_meV": float(ham_row["Jb_meV"]),
-            "Jc_meV": float(ham_row["Jc_meV"]),
-            "Dc_meV": float(ham_row["Dc_meV"]),
-            "spin_s": float(ham_row.get("spin_s", 2.5)),
-            "g_factor": float(ham_row.get("g_factor", 2.0)),
-        }
+        # Build metadata dynamically from ALL manifest columns
+        metadata = {}
+        for col in ham_df.columns:
+            metadata[col] = _to_json_safe(ham_row[col])
 
-        # V6 ADDITION: Add artifact paths to metadata (V5 pattern)
+        # Attach artifact locators to metadata (for Mode A access)
         artifacts = None
         if huid in art_grouped.groups:
             artifacts = art_grouped.get_group(huid)
             for _, art_row in artifacts.iterrows():
-                path_key = make_artifact_key(art_row, prefix="path_")
-                metadata[path_key] = art_row["path_rel"]
+                art_key = make_artifact_key(art_row)
+                metadata[f"path_{art_key}"] = art_row["file"]
+                metadata[f"dataset_{art_key}"] = art_row["dataset"]
+                if "index" in art_row.index and pd.notna(art_row.get("index")):
+                    metadata[f"index_{art_key}"] = int(art_row["index"])
 
-        # Create container with enriched metadata
+        # Create container with all metadata
         h_container = client.create_container(key=h_key, metadata=metadata)
         ham_count += 1
 
-        # V6: Also register arrays as children (V4 pattern)
+        # Register arrays as children (Mode B)
         if artifacts is not None:
             for _, art_row in artifacts.iterrows():
                 try:
                     art_key = make_artifact_key(art_row)
 
                     # Create data source pointing to external HDF5
-                    data_source, data_shape, data_dtype = create_data_source(art_row)
+                    data_source, data_shape, data_dtype = create_data_source(
+                        art_row, base_dir=base_dir
+                    )
 
-                    # Build artifact-specific metadata
+                    # Build artifact metadata dynamically from non-standard columns
                     art_metadata = {
                         "type": art_row["type"],
                         "shape": list(data_shape),
                         "dtype": str(data_dtype),
                     }
-
-                    # Add type-specific metadata
-                    if art_row["type"] == "mh_curve":
-                        art_metadata["axis"] = art_row["axis"]
-                        art_metadata["Hmax_T"] = float(art_row["Hmax_T"])
-                    elif art_row["type"] == "ins_powder":
-                        art_metadata["Ei_meV"] = float(art_row["Ei_meV"])
+                    for col in art_df.columns:
+                        if col not in ARTIFACT_STANDARD_COLS:
+                            art_metadata[col] = _to_json_safe(art_row[col])
 
                     # Register artifact as child of container
                     h_container.new(
@@ -265,22 +287,26 @@ def verify_registration(client):
         meta = dict(h.metadata)
 
         print(f"\nContainer '{h_key}':")
-        print(f"  Physics params:")
-        for k in ["Ja_meV", "Jb_meV", "Jc_meV", "Dc_meV"]:
-            print(f"    {k}: {meta.get(k)}")
 
-        # V6: Check paths in metadata
-        path_keys = [k for k in meta.keys() if k.startswith("path_")]
-        print(f"\n  Artifact paths in metadata: {len(path_keys)}")
+        # Show metadata keys (generic -- no hardcoded param names)
+        param_keys = [k for k in meta if not k.startswith(("path_", "dataset_", "index_"))]
+        print(f"  Metadata keys: {param_keys}")
+
+        # Check locators in metadata
+        path_keys = [k for k in meta if k.startswith("path_")]
+        dataset_keys = [k for k in meta if k.startswith("dataset_")]
+        index_keys = [k for k in meta if k.startswith("index_")]
+        print(f"\n  Locators in metadata:")
+        print(f"    path_*:    {len(path_keys)}")
+        print(f"    dataset_*: {len(dataset_keys)}")
+        print(f"    index_*:   {len(index_keys)}")
         for pk in path_keys[:3]:
             val = meta[pk]
-            if len(val) > 50:
+            if isinstance(val, str) and len(val) > 50:
                 val = "..." + val[-47:]
             print(f"    {pk}: {val}")
-        if len(path_keys) > 3:
-            print(f"    ... and {len(path_keys) - 3} more")
 
-        # V6: Check array children
+        # Check array children
         children = list(h.keys())
         print(f"\n  Array children: {len(children)}")
         if children:
@@ -295,12 +321,12 @@ def verify_registration(client):
             print(f"    Shape: {child.shape}")
             print(f"    Dtype: {child.dtype}")
 
-        # V6 Verification
+        # Dual-mode verification
         if path_keys and children:
-            print("\n  V6 VERIFIED: Both paths AND array children present!")
+            print("\n  VERIFIED: Both locators AND array children present!")
             print("  Users can choose either access mode.")
         else:
-            print("\n  WARNING: V6 incomplete!")
+            print("\n  WARNING: Dual-mode incomplete!")
             if not path_keys:
                 print("    Missing: path_* metadata")
             if not children:
@@ -312,14 +338,14 @@ def main():
     max_hamiltonians = get_max_hamiltonians()
 
     print("=" * 60)
-    print("VDP V6 Unified Dual-Mode Registration")
+    print("Generic Unified Dual-Mode Registration")
     print("=" * 60)
     print(f"Base dir:         {get_base_dir()}")
     print(f"Tiled URL:        {tiled_url}")
     print(f"Max Hamiltonians: {max_hamiltonians}")
     print()
-    print("V6 registers BOTH:")
-    print("  - path_* fields in metadata (expert path-based access)")
+    print("Registers BOTH:")
+    print("  - Locator fields in metadata (expert path-based access)")
     print("  - Array children via adapters (visualization chunked access)")
 
     # Check server
@@ -349,7 +375,7 @@ def main():
     verify_registration(client)
 
     print("\n" + "=" * 60)
-    print("Done! V6 catalog ready for dual-mode access.")
+    print("Done! Catalog ready for dual-mode access.")
     print("=" * 60)
 
 

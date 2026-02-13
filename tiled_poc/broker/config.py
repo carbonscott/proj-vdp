@@ -1,5 +1,5 @@
 """
-VDP Configuration Module.
+Configuration Module.
 
 Loads configuration from config.yml and provides accessor functions.
 Uses ruamel.yaml to preserve comments for round-trip editing.
@@ -17,13 +17,13 @@ _config_path = None
 
 
 def load_config(config_path=None):
-    """Load VDP config from YAML file.
+    """Load config from YAML file.
 
     Args:
         config_path: Path to config.yml. Defaults to config.yml in parent directory.
 
     Returns:
-        dict: The 'vdp' section of the config file.
+        dict: The 'broker' section of the config file (falls back to 'vdp' for compat).
     """
     if config_path is None:
         config_path = Path(__file__).parent.parent / "config.yml"
@@ -32,7 +32,8 @@ def load_config(config_path=None):
     with open(config_path) as f:
         full_config = yaml.load(f)
 
-    return full_config.get("vdp", {})
+    # Prefer 'broker' section, fall back to 'vdp' for backward compatibility
+    return full_config.get("broker", full_config.get("vdp", {}))
 
 
 def get_config():
@@ -59,18 +60,11 @@ def get_catalog_db_path():
     return os.path.join(get_service_dir(), "catalog.db")
 
 
-def get_dataset_paths():
-    """Get HDF5 dataset paths by artifact type."""
-    return get_config().get("dataset_paths", {})
-
-
-def get_default_shapes():
-    """Get default array shapes by artifact type."""
-    return get_config().get("default_shapes", {})
-
-
 def get_latest_manifest(prefix):
     """Find latest manifest file by prefix.
+
+    Reads glob patterns from config.yml ``manifests`` section if available,
+    otherwise falls back to the default pattern ``manifest_{prefix}_*.parquet``.
 
     Args:
         prefix: "hamiltonians" or "artifacts"
@@ -81,8 +75,19 @@ def get_latest_manifest(prefix):
     Raises:
         FileNotFoundError: If no manifest file found.
     """
-    base_dir = get_base_dir()
-    pattern = f"{base_dir}/manifest_{prefix}_*.parquet"
+    cfg = get_config()
+    manifests_cfg = cfg.get("manifests", {})
+
+    if prefix in manifests_cfg:
+        pattern = manifests_cfg[prefix]
+        # Resolve relative patterns against base_dir
+        if not os.path.isabs(pattern):
+            pattern = os.path.join(get_base_dir(), pattern)
+    else:
+        # Fallback to default pattern
+        base_dir = get_base_dir()
+        pattern = f"{base_dir}/manifest_{prefix}_*.parquet"
+
     files = sorted(glob.glob(pattern))
     if not files:
         raise FileNotFoundError(f"No manifest found matching: {pattern}")

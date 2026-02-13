@@ -57,11 +57,11 @@ def _():
     import sys
     from pathlib import Path
 
-    # Add scripts directory to path
-    sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+    # Add tiled_poc directory to path for broker package imports
+    sys.path.insert(0, str(Path(__file__).parent.parent))
 
     # Use config module for configuration
-    from config import get_tiled_url, get_api_key
+    from broker.config import get_tiled_url, get_api_key
 
     TILED_URL = get_tiled_url()
     API_KEY = get_api_key()
@@ -170,7 +170,7 @@ def _(mo):
 
 @app.cell
 def _(client, mo, time):
-    from query_manifest import query_manifest, load_from_manifest, build_mh_dataset
+    from broker.query_manifest import query_manifest, load_from_manifest, build_mh_dataset
 
     # Step 1: Query manifest
     _t0 = time.perf_counter()

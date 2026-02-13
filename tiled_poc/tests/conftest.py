@@ -26,8 +26,8 @@ from pathlib import Path
 
 import pytest
 
-# Add scripts directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+# Add tiled_poc directory to path for broker package imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 @pytest.fixture(scope="session")
@@ -61,7 +61,7 @@ def small_manifest(tiled_client):
 
     Returns first 5 Hamiltonians' manifest data.
     """
-    from query_manifest import query_manifest
+    from broker.query_manifest import query_manifest
 
     manifest = query_manifest(tiled_client, axis="powder", Hmax_T=30)
     return manifest.head(5)

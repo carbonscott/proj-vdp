@@ -65,11 +65,11 @@ def _():
     import sys
     from pathlib import Path
 
-    # Add scripts directory to path
-    sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+    # Add tiled_poc directory to path for broker package imports
+    sys.path.insert(0, str(Path(__file__).parent.parent))
 
     # Use config module for configuration
-    from config import get_tiled_url, get_api_key
+    from broker.config import get_tiled_url, get_api_key
 
     TILED_URL = get_tiled_url()
     API_KEY = get_api_key()
@@ -202,7 +202,7 @@ def _(mo):
 def _(INCIDENT_ENERGY_MEV, MAX_SPECTRA_DEMO, mo, np, subset, time):
     import h5py
     import os
-    from config import get_base_dir, get_dataset_paths
+    from broker.config import get_base_dir, get_dataset_paths
 
     def load_ins_mode_a(tiled_client, *, Ei_meV=12, max_spectra=None):
         """Load INS spectra using Mode A (direct HDF5)."""

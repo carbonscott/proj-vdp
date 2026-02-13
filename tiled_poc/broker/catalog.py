@@ -1,0 +1,66 @@
+"""
+Shared catalog helpers for config-driven ingest.
+
+Provides two functions:
+  - ensure_catalog(): create or connect to a Tiled catalog database
+  - register_dataset(): generate nodes from manifests and bulk-register
+"""
+
+from pathlib import Path
+
+
+def ensure_catalog(db_path, readable_storage, writable_storage):
+    """Create catalog.db if it doesn't exist, or return engine for existing one.
+
+    Args:
+        db_path: Path to the SQLite database file.
+        readable_storage: List of directories (only used on first creation).
+        writable_storage: Path to writable storage directory.
+
+    Returns:
+        SQLAlchemy engine connected to the catalog database.
+    """
+    from sqlalchemy import create_engine
+
+    db_path = Path(db_path)
+    uri = f"sqlite:///{db_path}"
+
+    if not db_path.exists():
+        from tiled.catalog import from_uri as catalog_from_uri
+
+        print(f"  Creating new catalog: {db_path}")
+        catalog_from_uri(
+            uri,
+            writable_storage=str(writable_storage),
+            readable_storage=readable_storage,
+            init_if_not_exists=True,
+        )
+    else:
+        print(f"  Using existing catalog: {db_path}")
+
+    return create_engine(uri)
+
+
+def register_dataset(engine, ham_df, art_df, base_dir, label):
+    """Generate nodes from manifests and bulk-register into the catalog.
+
+    Args:
+        engine: SQLAlchemy engine.
+        ham_df: Hamiltonian manifest DataFrame.
+        art_df: Artifact manifest DataFrame.
+        base_dir: Base directory for resolving relative file paths.
+        label: Dataset name (for logging).
+    """
+    from .bulk_register import prepare_node_data, bulk_register, _get_artifact_shape
+
+    n = len(ham_df)
+    print(f"\n--- Registering {label} ({n} Hamiltonians) ---")
+
+    # Clear shape cache to avoid cross-dataset collisions
+    _get_artifact_shape.__defaults__[1].clear()
+
+    ham_nodes, art_nodes, art_data_sources = prepare_node_data(
+        ham_df, art_df, max_hamiltonians=n, base_dir=base_dir,
+    )
+
+    bulk_register(engine, ham_nodes, art_nodes, art_data_sources)

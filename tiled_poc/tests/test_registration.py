@@ -32,8 +32,8 @@ from pathlib import Path
 import pytest
 import pandas as pd
 
-# Add scripts directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+# Add tiled_poc directory to path for broker package imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 class TestLoadManifests:
@@ -41,7 +41,7 @@ class TestLoadManifests:
 
     def test_load_hamiltonians_manifest(self):
         """Test that Hamiltonians manifest can be loaded."""
-        from config import get_latest_manifest
+        from broker.config import get_latest_manifest
 
         path = get_latest_manifest("hamiltonians")
         df = pd.read_parquet(path)
@@ -51,7 +51,7 @@ class TestLoadManifests:
 
     def test_load_artifacts_manifest(self):
         """Test that Artifacts manifest can be loaded."""
-        from config import get_latest_manifest
+        from broker.config import get_latest_manifest
 
         path = get_latest_manifest("artifacts")
         df = pd.read_parquet(path)
@@ -62,7 +62,7 @@ class TestLoadManifests:
 
     def test_manifests_have_matching_huids(self):
         """Test that artifact huids match Hamiltonian huids."""
-        from config import get_latest_manifest
+        from broker.config import get_latest_manifest
 
         ham_df = pd.read_parquet(get_latest_manifest("hamiltonians"))
         art_df = pd.read_parquet(get_latest_manifest("artifacts"))
@@ -161,7 +161,7 @@ class TestBulkRegistration:
     def test_bulk_registration_creates_nodes(self, temp_catalog_db):
         """Test that bulk registration creates node entries."""
         from sqlalchemy import create_engine, text
-        from config import get_latest_manifest
+        from broker.config import get_latest_manifest
 
         # Load small subset of manifests
         ham_df = pd.read_parquet(get_latest_manifest("hamiltonians")).head(3)

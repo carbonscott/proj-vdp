@@ -41,7 +41,7 @@ import numpy as np
 import pandas as pd
 from tiled.queries import Key
 
-from config import get_base_dir, get_dataset_paths, get_tiled_url, get_api_key
+from .config import get_base_dir, get_dataset_paths, get_tiled_url, get_api_key
 
 
 def query_manifest(client, *, artifact_type="mh_curve", axis=None, Hmax_T=None,

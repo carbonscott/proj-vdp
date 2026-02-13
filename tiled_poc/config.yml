@@ -13,26 +13,19 @@ trees:
       readable_storage:
         - "/sdf/data/lcls/ds/prj/prjmaiqmag01/results/vdp/data/schema_v1"
 
-# VDP application config (used by Python scripts)
-vdp:
+# Broker configuration (dataset-agnostic)
+broker:
   # Service directory (where catalog.db and storage/ live)
   service_dir: "/sdf/data/lcls/ds/prj/prjmaiqmag01/results/cwang31/proj-vdp/tiled_poc"
 
-  # VDP data directory
+  # Data directory root
   data_dir: "/sdf/data/lcls/ds/prj/prjmaiqmag01/results/vdp"
   schema_version: "schema_v1"
 
-  # HDF5 dataset paths by artifact type
-  dataset_paths:
-    mh_curve: "/curve/M_parallel"
-    gs_state: "/gs/spin_dir"
-    ins_powder: "/ins/broadened"
-
-  # Default array shapes by artifact type
-  default_shapes:
-    mh_curve: [200]
-    gs_state: [3, 8]
-    ins_powder: [600, 400]
+  # Manifest file patterns (resolved relative to base_dir)
+  manifests:
+    hamiltonians: "manifest_hamiltonians_*.parquet"
+    artifacts: "manifest_artifacts_*.parquet"
 
   # Registration defaults (override with VDP_MAX_HAMILTONIANS env var)
   max_hamiltonians: 10
