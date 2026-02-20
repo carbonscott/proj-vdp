@@ -382,14 +382,15 @@ def bulk_register(engine, ent_nodes, art_nodes, art_data_sources):
             node_id = art_id_map[(ds["parent_uid"], ds["art_key"])]
             result = conn.execute(
                 text("""
-                    INSERT INTO data_sources (node_id, structure_id, mimetype, parameters, management, structure_family)
-                    VALUES (:node_id, :structure_id, :mimetype, :parameters, :management, :structure_family)
+                    INSERT INTO data_sources (node_id, structure_id, mimetype, parameters, properties, management, structure_family)
+                    VALUES (:node_id, :structure_id, :mimetype, :parameters, :properties, :management, :structure_family)
                 """),
                 {
                     "node_id": node_id,
                     "structure_id": ds["structure_id"],
                     "mimetype": "application/x-hdf5",
                     "parameters": json.dumps(ds["parameters"]),
+                    "properties": json.dumps({}),
                     "management": "external",
                     "structure_family": "array",
                 }
