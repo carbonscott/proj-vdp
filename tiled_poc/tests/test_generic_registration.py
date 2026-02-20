@@ -284,8 +284,8 @@ class TestNiPS3Registration:
         assert shapes["rixs"] == [6, 5]  # (5, 6, 5) -> (6, 5) per entity
         assert shapes["mag"] == [10]  # (5, 10) -> (10,) per entity
 
-    def test_data_source_has_index_parameter(self, nips3_manifests):
-        """Data sources for batched files include index in parameters."""
+    def test_data_source_has_slice_parameter(self, nips3_manifests):
+        """Data sources for batched files include slice in parameters."""
         from broker.bulk_register import prepare_node_data
         ent_df, art_df, base_dir = nips3_manifests
 
@@ -294,17 +294,17 @@ class TestNiPS3Registration:
         )
 
         for ds in art_ds:
-            assert "index" in ds["parameters"]
+            assert "slice" in ds["parameters"]
 
-        # First entity's artifacts should have index=0
+        # First entity's artifacts should have slice="0"
         first_ent_ds = [ds for ds in art_ds if ds["parent_uid"] == "rank0000_0000"]
         for ds in first_ent_ds:
-            assert ds["parameters"]["index"] == 0
+            assert ds["parameters"]["slice"] == "0"
 
-        # Second entity's artifacts should have index=1
+        # Second entity's artifacts should have slice="1"
         second_ent_ds = [ds for ds in art_ds if ds["parent_uid"] == "rank0000_0001"]
         for ds in second_ent_ds:
-            assert ds["parameters"]["index"] == 1
+            assert ds["parameters"]["slice"] == "1"
 
     def test_shared_assets_for_batched_files(self, nips3_manifests):
         """Batched files: multiple artifacts share the same HDF5 file."""

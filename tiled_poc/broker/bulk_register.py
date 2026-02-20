@@ -259,7 +259,7 @@ def prepare_node_data(ent_df, art_df, max_entities, base_dir=None):
                 # Build data source parameters
                 ds_params = {"dataset": dataset_path}
                 if index is not None:
-                    ds_params["index"] = index
+                    ds_params["slice"] = str(int(index))
 
                 art_nodes.append({
                     "key": art_key,
