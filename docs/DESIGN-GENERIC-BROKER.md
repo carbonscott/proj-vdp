@@ -190,8 +190,9 @@ The dual-mode architecture from V6 remains:
   Fast for bulk ML workloads. The locator `(file, dataset, index)` is in metadata.
 
 - **Mode B (Visualizer):** Access arrays via Tiled HTTP adapters. Convenient for
-  interactive exploration. For batched files, a small custom adapter handles the
-  `index` field (~30 lines of code).
+  interactive exploration. For batched files, the registration code translates
+  the manifest's `index` to Tiled's built-in `slice` parameter — no custom
+  adapter needed.
 
 ## 6. Coexistence of Multiple Datasets
 
@@ -252,7 +253,7 @@ query on whatever metadata keys exist.
 
 | Component | Description | Effort |
 |-----------|-------------|--------|
-| `SlicedHDF5Adapter` | Custom Tiled adapter for Mode B on batched files | ~30 lines |
+| ~~`SlicedHDF5Adapter`~~ | ~~Custom Tiled adapter for Mode B on batched files~~ | Not needed — Tiled's built-in `slice` parameter handles this (see PR #6) |
 | Manifest validation | Optional: validate manifest has required columns | ~20 lines |
 
 ## 9. What Does NOT Change

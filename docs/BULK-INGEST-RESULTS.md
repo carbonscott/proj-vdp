@@ -106,13 +106,8 @@ EDRIXS uses **batched arrays** — all 10K RIXS spectra are stored in a single
 HDF5 dataset of shape `(10000, 151, 40)`. Each entity's artifact has an
 `index` parameter that selects one slice (e.g. `spectra[0]` for the first).
 
-The standard Tiled HDF5 adapter does not support the `index` parameter, so
-Mode B array reads fail with HTTP 500. This is a pre-existing Tiled limitation,
-not specific to the broker.
+Tiled's HDF5 adapter supports a built-in `slice` parameter that selects a
+row from the batched array. The registration code translates the manifest's
+`index` column to `slice` in the Tiled DataSource parameters (see PR #6).
 
-**Workarounds:**
-- Use Mode A (direct h5py with index) — works correctly
-- Write a custom Tiled adapter that handles the `index` parameter
-- Pre-slice batched files into per-entity files (trades disk space for compatibility)
-
-Mode A is the recommended access pattern for batched datasets.
+Both Mode A and Mode B work correctly for batched datasets.

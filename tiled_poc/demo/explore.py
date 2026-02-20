@@ -135,9 +135,9 @@ def cell_edrixs(client, edrixs_keys, mo):
 
         Parameters: `{param_keys}`
 
-        *Note: Mode B (Tiled adapter) is not available for indexed/batched arrays.
-        The monolithic `spectra` dataset has shape (10000, 151, 40) and requires
-        index-based slicing which the default HDF5 adapter does not support.*
+        *Mode B is also available: the registration code translates the manifest
+        `index` to Tiled's built-in `slice` parameter, so `client[key]["rixs"][:]`
+        returns the correct per-entity spectrum.*
         """
     )
     return
