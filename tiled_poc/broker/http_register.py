@@ -75,7 +75,7 @@ def create_data_source(art_row, base_dir):
     # Build parameters
     ds_params = {"dataset": dataset_path}
     if index is not None:
-        ds_params["index"] = index
+        ds_params["slice"] = str(int(index))
 
     # Create data source
     data_source = DataSource(

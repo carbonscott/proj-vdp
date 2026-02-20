@@ -259,7 +259,7 @@ def prepare_node_data(ent_df, art_df, max_entities, base_dir=None):
                 # Build data source parameters
                 ds_params = {"dataset": dataset_path}
                 if index is not None:
-                    ds_params["index"] = index
+                    ds_params["slice"] = str(int(index))
 
                 art_nodes.append({
                     "key": art_key,
@@ -382,14 +382,15 @@ def bulk_register(engine, ent_nodes, art_nodes, art_data_sources):
             node_id = art_id_map[(ds["parent_uid"], ds["art_key"])]
             result = conn.execute(
                 text("""
-                    INSERT INTO data_sources (node_id, structure_id, mimetype, parameters, management, structure_family)
-                    VALUES (:node_id, :structure_id, :mimetype, :parameters, :management, :structure_family)
+                    INSERT INTO data_sources (node_id, structure_id, mimetype, parameters, properties, management, structure_family)
+                    VALUES (:node_id, :structure_id, :mimetype, :parameters, :properties, :management, :structure_family)
                 """),
                 {
                     "node_id": node_id,
                     "structure_id": ds["structure_id"],
                     "mimetype": "application/x-hdf5",
                     "parameters": json.dumps(ds["parameters"]),
+                    "properties": json.dumps({}),
                     "management": "external",
                     "structure_family": "array",
                 }
