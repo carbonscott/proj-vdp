@@ -304,22 +304,40 @@ def bulk_register(engine, ent_nodes, art_nodes, art_data_sources,
         print("Step 1: Disabling closure table trigger...")
         conn.execute(text("DROP TRIGGER IF EXISTS update_closure_table_when_inserting"))
 
-        # Step 1b: Create dataset container
+        # Step 1b: Create or reuse dataset container
         print(f"Step 1b: Creating dataset container '{dataset_key}'...")
-        result = conn.execute(text("""
-            INSERT INTO nodes (parent, key, structure_family, metadata, specs, access_blob)
-            VALUES (0, :key, 'container', :metadata, '[]', '{}')
-        """), {
-            "key": dataset_key,
-            "metadata": json.dumps(dataset_metadata),
-        })
-        dataset_parent_id = result.lastrowid
+        row = conn.execute(text(
+            "SELECT id FROM nodes WHERE parent = 0 AND key = :key"
+        ), {"key": dataset_key}).fetchone()
 
-        # Step 2: Insert entity nodes
+        if row:
+            dataset_parent_id = row[0]
+            print(f"  Using existing container (id={dataset_parent_id})")
+        else:
+            result = conn.execute(text("""
+                INSERT INTO nodes (parent, key, structure_family, metadata, specs, access_blob)
+                VALUES (0, :key, 'container', :metadata, '[]', '{}')
+            """), {
+                "key": dataset_key,
+                "metadata": json.dumps(dataset_metadata),
+            })
+            dataset_parent_id = result.lastrowid
+
+        # Step 2: Insert entity nodes (skip existing)
         print(f"Step 2: Inserting {len(ent_nodes)} entity nodes...")
         ent_id_map = {}  # uid -> node_id
+        skip_uids = set()  # uids of skipped entities
 
         for ent in ent_nodes:
+            existing = conn.execute(text(
+                "SELECT id FROM nodes WHERE parent = :parent AND key = :key"
+            ), {"parent": dataset_parent_id, "key": ent["key"]}).fetchone()
+
+            if existing:
+                ent_id_map[ent["uid"]] = existing[0]
+                skip_uids.add(ent["uid"])
+                continue
+
             result = conn.execute(
                 text("""
                     INSERT INTO nodes (parent, key, structure_family, metadata, specs, access_blob)
@@ -336,11 +354,15 @@ def bulk_register(engine, ent_nodes, art_nodes, art_data_sources,
             )
             ent_id_map[ent["uid"]] = result.lastrowid
 
-        # Step 3: Insert artifact nodes
-        print(f"Step 3: Inserting {len(art_nodes)} artifact nodes...")
+        if skip_uids:
+            print(f"  Skipped {len(skip_uids)} existing entities")
+
+        # Step 3: Insert artifact nodes (skip if parent entity was skipped)
+        art_to_insert = [a for a in art_nodes if a["parent_uid"] not in skip_uids]
+        print(f"Step 3: Inserting {len(art_to_insert)} artifact nodes...")
         art_id_map = {}  # (uid, art_key) -> node_id
 
-        for art in art_nodes:
+        for art in art_to_insert:
             parent_id = ent_id_map[art["parent_uid"]]
             result = conn.execute(
                 text("""
@@ -358,10 +380,14 @@ def bulk_register(engine, ent_nodes, art_nodes, art_data_sources,
             )
             art_id_map[(art["parent_uid"], art["key"])] = result.lastrowid
 
+        # Filter data sources to match inserted artifacts only
+        ds_to_insert = [ds for ds in art_data_sources
+                        if ds["parent_uid"] not in skip_uids]
+
         # Step 4: Insert structures (deduplicated)
         print("Step 4: Inserting structures...")
         structures_seen = set()
-        for ds in art_data_sources:
+        for ds in ds_to_insert:
             sid = ds["structure_id"]
             if sid not in structures_seen:
                 conn.execute(
@@ -378,7 +404,7 @@ def bulk_register(engine, ent_nodes, art_nodes, art_data_sources,
         print("Step 5: Inserting assets...")
         asset_id_map = {}  # data_uri -> asset_id
 
-        for ds in art_data_sources:
+        for ds in ds_to_insert:
             data_uri = f"file://localhost{ds['h5_path']}"
             if data_uri not in asset_id_map:
                 result = conn.execute(
@@ -400,7 +426,7 @@ def bulk_register(engine, ent_nodes, art_nodes, art_data_sources,
         print("Step 6: Inserting data sources...")
         ds_id_map = {}  # (uid, art_key) -> data_source_id
 
-        for ds in art_data_sources:
+        for ds in ds_to_insert:
             node_id = art_id_map[(ds["parent_uid"], ds["art_key"])]
             result = conn.execute(
                 text("""
@@ -421,7 +447,7 @@ def bulk_register(engine, ent_nodes, art_nodes, art_data_sources,
 
         # Step 7: Insert data_source_asset_association
         print("Step 7: Inserting data source asset associations...")
-        for ds in art_data_sources:
+        for ds in ds_to_insert:
             ds_id = ds_id_map[(ds["parent_uid"], ds["art_key"])]
             data_uri = f"file://localhost{ds['h5_path']}"
             asset_id = asset_id_map[data_uri]
