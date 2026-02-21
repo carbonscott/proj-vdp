@@ -95,6 +95,7 @@ Three levels: **Dataset → Entity → Artifact**.
 │   metadata: {
 │     organization: "MAIQMag",
 │     data_type: "experimental",      ← not simulation
+│     material: "NiPS3",
 │     producer: null,                 ← N/A
 │     facility: "LCLS",
 │     instrument: "qRIXS",
@@ -105,6 +106,7 @@ Three levels: **Dataset → Entity → Artifact**.
     metadata: {
       organization: "MAIQMag",
       data_type: "experimental",
+      material: "NiPS3",
       facility: "SNS",
       instrument: "SEQUOIA",
     }
@@ -133,6 +135,38 @@ For simulations, the `producer` and `producer_version` fields capture
 **how the data was generated** — the simulation code, its version, and
 optionally the commit hash.  These slots should be defined now even if
 not yet populated, so the schema expectation is documented.
+
+### Why material is metadata, not structure
+
+Some team members have suggested placing materials at the top level
+(`root → material → dataset → entity → artifact`), since nearly all
+current datasets describe NiPS3.  We keep material as a metadata field
+on the dataset container for the same reasons as organization:
+
+1. **Lopsided tree.**  Most current datasets are NiPS3-related (EDRIXS,
+   NiPS3_Multimodal, RIXS, SEQUOIA), while VDP uses a generic spin
+   model.  A structural `NiPS3/` node with most children and a lone
+   `generic/` node is not a useful partition.
+
+2. **Ambiguous classification.**  VDP is a generic spin model — it is
+   not tied to any specific material.  Forcing it into a material bucket
+   introduces an artificial choice that metadata avoids.
+
+3. **Cross-cutting queries are easy.**  At the dataset container level
+   there are only ~6 rows, so `client.search(Key("material") == "NiPS3")`
+   is instant.  The same pattern works for `facility`, `producer`, or
+   any other descriptor — no structural change required.
+
+4. **Extra depth costs more than it saves.**  A 4th structural level
+   lengthens every access path
+   (`client["NiPS3"]["EDRIXS"]["H_edx00000"]`) and adds complexity to
+   the closure table, with no query-performance benefit at our scale.
+
+The general principle: **promote a descriptor to structure only when it
+partitions the data into roughly equal, stable groups that users
+routinely navigate by**.  Dataset type meets this criterion (simulation
+vs. experimental, different parameter spaces).  Material, organization,
+and facility do not — they are better served as queryable metadata.
 
 ---
 
@@ -417,6 +451,27 @@ for key in client.keys():
 edrixs = client["EDRIXS"]
 subset = edrixs.search(Key("tenDq") > 3.0)
 ```
+
+Because descriptors like `material` and `facility` are metadata fields
+on the dataset containers, cross-cutting queries are straightforward:
+
+```python
+from tiled.queries import Key
+
+# "Give me all NiPS3 datasets for my ML task"
+nips3 = client.search(Key("material") == "NiPS3")
+
+# "Show me everything from SNS"
+sns = client.search(Key("facility") == "SNS")
+
+# Combine criteria
+nips3_exp = client.search(Key("material") == "NiPS3").search(
+    Key("data_type") == "experimental"
+)
+```
+
+These queries scan only the ~6 dataset-container rows (not the 27K+
+entity rows), so they are effectively free.
 
 ### Relationship to ticket #38
 
