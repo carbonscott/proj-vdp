@@ -41,7 +41,8 @@ def ensure_catalog(db_path, readable_storage, writable_storage):
     return create_engine(uri)
 
 
-def register_dataset(engine, ent_df, art_df, base_dir, label):
+def register_dataset(engine, ent_df, art_df, base_dir, label,
+                     dataset_key, dataset_metadata):
     """Generate nodes from manifests and bulk-register into the catalog.
 
     Args:
@@ -50,6 +51,8 @@ def register_dataset(engine, ent_df, art_df, base_dir, label):
         art_df: Artifact manifest DataFrame.
         base_dir: Base directory for resolving relative file paths.
         label: Dataset name (for logging).
+        dataset_key: Key for the dataset container (e.g. "VDP").
+        dataset_metadata: Metadata dict for the dataset container.
     """
     from .bulk_register import prepare_node_data, bulk_register
     from .utils import get_artifact_shape
@@ -64,4 +67,5 @@ def register_dataset(engine, ent_df, art_df, base_dir, label):
         ent_df, art_df, max_entities=n, base_dir=base_dir,
     )
 
-    bulk_register(engine, ent_nodes, art_nodes, art_data_sources)
+    bulk_register(engine, ent_nodes, art_nodes, art_data_sources,
+                  dataset_key=dataset_key, dataset_metadata=dataset_metadata)

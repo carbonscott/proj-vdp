@@ -90,11 +90,12 @@ def create_data_source(art_row, base_dir):
     return data_source, data_shape, data_dtype
 
 
-def register_dataset_http(client, ent_df, art_df, base_dir, label):
+def register_dataset_http(client, ent_df, art_df, base_dir, label,
+                          dataset_key, dataset_metadata):
     """Register one dataset via HTTP through a running Tiled server.
 
-    Creates entity containers with locator metadata (Mode A) and
-    array children via DataSource adapters (Mode B).
+    Creates a dataset container, then entity containers with locator
+    metadata (Mode A) and array children via DataSource adapters (Mode B).
 
     Args:
         client: Tiled client connected to a running server.
@@ -102,6 +103,8 @@ def register_dataset_http(client, ent_df, art_df, base_dir, label):
         art_df: Artifact manifest DataFrame.
         base_dir: Base directory for resolving relative file paths.
         label: Dataset name (for logging).
+        dataset_key: Key for the dataset container (e.g. "VDP").
+        dataset_metadata: Metadata dict for the dataset container.
 
     Returns:
         bool: True if any entities were registered.
@@ -119,6 +122,17 @@ def register_dataset_http(client, ent_df, art_df, base_dir, label):
             "The manifest generator must provide a 'key' for each entity."
         )
 
+    # Create or reuse dataset container
+    if dataset_key in client:
+        parent_client = client[dataset_key]
+        print(f"Using existing dataset container '{dataset_key}'")
+    else:
+        parent_client = client.create_container(
+            key=dataset_key,
+            metadata=dataset_metadata,
+        )
+        print(f"Created dataset container '{dataset_key}'")
+
     # Pre-group artifacts by uid for O(1) lookup
     print("Pre-grouping artifacts by uid...")
     art_grouped = art_df.groupby("uid")
@@ -131,7 +145,7 @@ def register_dataset_http(client, ent_df, art_df, base_dir, label):
         ent_key = str(ent_row["key"])
 
         # Skip if container already exists
-        if ent_key in client:
+        if ent_key in parent_client:
             skip_count += 1
             continue
 
@@ -151,8 +165,8 @@ def register_dataset_http(client, ent_df, art_df, base_dir, label):
                 if "index" in art_row.index and pd.notna(art_row.get("index")):
                     metadata[f"index_{art_key}"] = int(art_row["index"])
 
-        # Create container with all metadata
-        ent_container = client.create_container(key=ent_key, metadata=metadata)
+        # Create container with all metadata under dataset
+        ent_container = parent_client.create_container(key=ent_key, metadata=metadata)
         ent_count += 1
 
         # Register arrays as children (Mode B)

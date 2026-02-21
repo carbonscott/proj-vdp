@@ -68,7 +68,7 @@ def ingest_main():
 
     # Register each dataset
     for name, config in configs:
-        label = config["label"]
+        label = config.get("label", config["key"])
         base_dir = config["base_dir"]
 
         ent_path = MANIFESTS_DIR / f"{name}_entities.parquet"
@@ -84,7 +84,11 @@ def ingest_main():
         ent_df = pd.read_parquet(ent_path)
         art_df = pd.read_parquet(art_path)
 
-        register_dataset(engine, ent_df, art_df, base_dir, label)
+        dataset_key = config["key"]
+        dataset_metadata = config.get("metadata", {"label": label})
+        register_dataset(engine, ent_df, art_df, base_dir, label,
+                         dataset_key=dataset_key,
+                         dataset_metadata=dataset_metadata)
 
     # Verify
     from broker.bulk_register import verify_registration
@@ -140,7 +144,7 @@ def generate_main(default_generators_dir="generators"):
 
         config = _load_config(config_path)
         name = Path(config_path).stem
-        label = config["label"]
+        label = config.get("label", config["key"])
         generator_module = config["generator"]
 
         print(f"\n--- Generating {label} ({name}) ---")
@@ -207,7 +211,7 @@ def register_main():
 
         config = _load_config(config_path)
         name = Path(config_path).stem
-        label = config["label"]
+        label = config.get("label", config["key"])
         base_dir = config["base_dir"]
 
         ent_path = MANIFESTS_DIR / f"{name}_entities.parquet"
@@ -230,7 +234,11 @@ def register_main():
         # Clear shape cache between datasets
         get_artifact_shape.__defaults__[-1].clear()
 
-        register_dataset_http(client, ent_df, art_df, base_dir, label)
+        dataset_key = config["key"]
+        dataset_metadata = config.get("metadata", {"label": label})
+        register_dataset_http(client, ent_df, art_df, base_dir, label,
+                              dataset_key=dataset_key,
+                              dataset_metadata=dataset_metadata)
 
     # Verify
     verify_registration_http(client)
