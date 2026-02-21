@@ -1,0 +1,29 @@
+# Finalized from draft_sunny_10k.yml
+# Source: SUNNY NiPS3 10K (spin-wave theory on high-symmetry path)
+# 10,000 entities (1 file x 10,000 batch size)
+
+label: sunny_10k
+key_prefix: sunny
+
+data:
+  directory: /sdf/data/lcls/ds/prj/prjmaiqmag01/results/data-source/data-tlinker/SUNNY/NIPS_10000
+  file_pattern: "NiPS_10000.h5"
+  layout: batched
+
+parameters:
+  location: group
+  group: /params
+
+artifacts:
+  - type: sqe_hisym
+    dataset: /data
+
+shared:
+  - type: E_axis
+    dataset: /E_axis
+  - type: Q_axis
+    dataset: /Q_axis
+
+project: vdp
+generator: sunny_jl
+material: NiPS3

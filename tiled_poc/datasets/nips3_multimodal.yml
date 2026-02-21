@@ -1,0 +1,33 @@
+# Finalized from draft_nips3_multimodal.yml
+# Source: NiPS3 Multimodal Synthetic (Sunny.jl)
+# 7,616 entities (one per file)
+
+label: nips3_multimodal
+key_prefix: nips3mm
+
+data:
+  directory: /sdf/data/lcls/ds/prj/prjmaiqmag01/results/data-source/NiPS3_Multimodal_Synthetic/data
+  file_pattern: "*.h5"
+  layout: per_entity
+
+parameters:
+  location: root_scalars
+
+artifacts:
+  - { type: hisym, dataset: /hisym }
+  - { type: powder, dataset: /powder }
+  - { type: powder_mask, dataset: /powder_mask }
+  - { type: mag_a, dataset: /Ma }
+  - { type: mag_b, dataset: /Mb }
+  - { type: mag_cs, dataset: /Mcs }
+
+shared:
+  - { type: H, dataset: /H }
+  - { type: energies, dataset: /energies }
+  - { type: energies_powder, dataset: /energies_powder }
+  - { type: qs, dataset: /qs }
+  - { type: radii, dataset: /radii }
+
+project: vdp
+generator: sunny_jl
+material: NiPS3
