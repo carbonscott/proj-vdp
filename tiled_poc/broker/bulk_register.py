@@ -284,8 +284,18 @@ def prepare_node_data(ent_df, art_df, max_entities, base_dir=None):
     return ent_nodes, art_nodes, art_data_sources
 
 
-def bulk_register(engine, ent_nodes, art_nodes, art_data_sources):
-    """Bulk insert all data with trigger disable/rebuild."""
+def bulk_register(engine, ent_nodes, art_nodes, art_data_sources,
+                  dataset_key, dataset_metadata):
+    """Bulk insert all data with trigger disable/rebuild.
+
+    Args:
+        engine: SQLAlchemy engine.
+        ent_nodes: List of entity node dicts.
+        art_nodes: List of artifact node dicts.
+        art_data_sources: List of data source info for artifacts.
+        dataset_key: Key for the dataset container (e.g. "VDP").
+        dataset_metadata: Metadata dict for the dataset container.
+    """
 
     start_time = time.time()
 
@@ -293,6 +303,17 @@ def bulk_register(engine, ent_nodes, art_nodes, art_data_sources):
         # Step 1: Disable closure table trigger
         print("Step 1: Disabling closure table trigger...")
         conn.execute(text("DROP TRIGGER IF EXISTS update_closure_table_when_inserting"))
+
+        # Step 1b: Create dataset container
+        print(f"Step 1b: Creating dataset container '{dataset_key}'...")
+        result = conn.execute(text("""
+            INSERT INTO nodes (parent, key, structure_family, metadata, specs, access_blob)
+            VALUES (0, :key, 'container', :metadata, '[]', '{}')
+        """), {
+            "key": dataset_key,
+            "metadata": json.dumps(dataset_metadata),
+        })
+        dataset_parent_id = result.lastrowid
 
         # Step 2: Insert entity nodes
         print(f"Step 2: Inserting {len(ent_nodes)} entity nodes...")
@@ -302,9 +323,10 @@ def bulk_register(engine, ent_nodes, art_nodes, art_data_sources):
             result = conn.execute(
                 text("""
                     INSERT INTO nodes (parent, key, structure_family, metadata, specs, access_blob)
-                    VALUES (0, :key, :structure_family, :metadata, :specs, :access_blob)
+                    VALUES (:parent, :key, :structure_family, :metadata, :specs, :access_blob)
                 """),
                 {
+                    "parent": dataset_parent_id,
                     "key": ent["key"],
                     "structure_family": ent["structure_family"],
                     "metadata": json.dumps(ent["metadata"]),
@@ -429,13 +451,23 @@ def bulk_register(engine, ent_nodes, art_nodes, art_data_sources):
             SELECT parent, id, 1 FROM nodes WHERE parent IS NOT NULL
         """))
 
-        # Grandparent (depth=2) - for 2-level hierarchy
+        # Grandparent (depth=2) - for root → dataset → entity
         conn.execute(text("""
             INSERT INTO nodes_closure (ancestor, descendant, depth)
             SELECT gp.parent, n.id, 2
             FROM nodes n
             JOIN nodes gp ON n.parent = gp.id
             WHERE gp.parent IS NOT NULL
+        """))
+
+        # Great-grandparent (depth=3) - for root → dataset → entity → artifact
+        conn.execute(text("""
+            INSERT INTO nodes_closure (ancestor, descendant, depth)
+            SELECT ggp.parent, n.id, 3
+            FROM nodes n
+            JOIN nodes gp ON n.parent = gp.id
+            JOIN nodes ggp ON gp.parent = ggp.id
+            WHERE ggp.parent IS NOT NULL
         """))
 
         # Verify closure table
@@ -478,32 +510,45 @@ def verify_registration(db_path):
         print(f"  assets:         {assets}")
         print(f"  associations:   {associations}")
 
-        # Sample an entity
-        ent = conn.execute(text("""
-            SELECT id, key, metadata FROM nodes
+        # List dataset containers
+        datasets = conn.execute(text("""
+            SELECT id, key FROM nodes
             WHERE parent = 0 AND key != ''
-            LIMIT 1
-        """)).fetchone()
+        """)).fetchall()
+        print(f"  datasets:       {len(datasets)}")
+        for ds_id, ds_key in datasets:
+            n_ents = conn.execute(text(
+                "SELECT COUNT(*) FROM nodes WHERE parent = :ds_id"
+            ), {"ds_id": ds_id}).fetchone()[0]
+            print(f"    {ds_key}: {n_ents} entities")
 
-        if ent:
-            print(f"\nSample entity: {ent[1]}")
-            meta = json.loads(ent[2])
+        # Sample one entity from first dataset
+        if datasets:
+            ds_id = datasets[0][0]
+            ent = conn.execute(text("""
+                SELECT id, key, metadata FROM nodes
+                WHERE parent = :ds_id LIMIT 1
+            """), {"ds_id": ds_id}).fetchone()
 
-            # Show first few metadata keys (generic -- no hardcoded param names)
-            meta_keys = [k for k in meta if not k.startswith(("path_", "dataset_", "index_"))]
-            print(f"  Metadata keys: {meta_keys}")
+            if ent:
+                print(f"\nSample entity: {ent[1]} (under {datasets[0][1]})")
+                meta = json.loads(ent[2])
 
-            # Count children
-            children = conn.execute(text("""
-                SELECT COUNT(*) FROM nodes WHERE parent = :parent_id
-            """), {"parent_id": ent[0]}).fetchone()[0]
-            print(f"  Children: {children}")
+                # Show first few metadata keys (generic -- no hardcoded param names)
+                meta_keys = [k for k in meta if not k.startswith(("path_", "dataset_", "index_"))]
+                print(f"  Metadata keys: {meta_keys}")
 
-            # Check locator keys in metadata
-            path_keys = [k for k in meta if k.startswith("path_")]
-            dataset_keys = [k for k in meta if k.startswith("dataset_")]
-            index_keys = [k for k in meta if k.startswith("index_")]
-            print(f"  Locator keys: {len(path_keys)} paths, {len(dataset_keys)} datasets, {len(index_keys)} indices")
+                # Count children
+                children = conn.execute(text("""
+                    SELECT COUNT(*) FROM nodes WHERE parent = :parent_id
+                """), {"parent_id": ent[0]}).fetchone()[0]
+                print(f"  Children: {children}")
+
+                # Check locator keys in metadata
+                path_keys = [k for k in meta if k.startswith("path_")]
+                dataset_keys = [k for k in meta if k.startswith("dataset_")]
+                index_keys = [k for k in meta if k.startswith("index_")]
+                print(f"  Locator keys: {len(path_keys)} paths, {len(dataset_keys)} datasets, {len(index_keys)} indices")
 
     print("\n" + "=" * 50)
     print("To test with Tiled server:")
